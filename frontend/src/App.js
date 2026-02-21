@@ -91,6 +91,38 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/daily"
+        element={<AppLayout><DailyChallengePage /></AppLayout>}
+      />
+      <Route
+        path="/roadmap"
+        element={<AppLayout><RoadmapPage /></AppLayout>}
+      />
+      <Route
+        path="/leaderboard"
+        element={<AppLayout><GlobalLeaderboardPage /></AppLayout>}
+      />
+      <Route
+        path="/interview-kits"
+        element={<AppLayout><InterviewKitsPage /></AppLayout>}
+      />
+      <Route
+        path="/battle"
+        element={
+          <ProtectedRoute>
+            <BattleModePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/battle/:battleId"
+        element={
+          <ProtectedRoute>
+            <BattleModePage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
