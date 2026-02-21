@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, Code2, Trophy, Calendar, Clock, ChevronRight, Loader2, Shield } from "lucide-react";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { toast } from "sonner";
+import ActivityHeatmap from "@/components/ActivityHeatmap";
 
 const VERDICT_COLORS = {
   "Accepted": "text-green-400",
