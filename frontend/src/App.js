@@ -10,6 +10,11 @@ import ContestListPage from "@/pages/ContestListPage";
 import ContestArenaPage from "@/pages/ContestArenaPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import ProfilePage from "@/pages/ProfilePage";
+import DailyChallengePage from "@/pages/DailyChallengePage";
+import RoadmapPage from "@/pages/RoadmapPage";
+import GlobalLeaderboardPage from "@/pages/GlobalLeaderboardPage";
+import InterviewKitsPage from "@/pages/InterviewKitsPage";
+import BattleModePage from "@/pages/BattleModePage";
 import "@/App.css";
 
 // Protected route wrapper
