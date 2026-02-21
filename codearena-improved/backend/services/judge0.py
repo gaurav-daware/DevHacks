@@ -33,6 +33,7 @@ async def run_single(
     }
 
     url = f"{settings.JUDGE0_URL}/submissions?wait=true"
+    print(f"[JUDGE0] Executing {language} at {url}")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
@@ -52,6 +53,7 @@ async def run_single(
                 if compile_out:
                     stderr = compile_out + "\n" + stderr
 
+            print(f"[JUDGE0] Execution complete - Status: {data.get('status', {}).get('description', 'Unknown')}")
             return {
                 "stdout": stdout,
                 "stderr": stderr,
@@ -60,16 +62,18 @@ async def run_single(
                 "time": data.get("time"),
                 "memory": data.get("memory"),
             }
-        except httpx.ConnectError:
+        except httpx.ConnectError as e:
+            print(f"[JUDGE0] ERROR: Connection failed to {settings.JUDGE0_URL} - {e}")
             return {
                 "stdout": "",
-                "stderr": "Judge0 service unavailable. Make sure Docker is running on port 2358.",
+                "stderr": f"Judge0 service unavailable at {settings.JUDGE0_URL}. Make sure Docker is running on port 2358.",
                 "status_id": -1,
                 "status": "Service Unavailable",
                 "time": None,
                 "memory": None,
             }
         except Exception as e:
+            print(f"[JUDGE0] ERROR: {type(e).__name__}: {e}")
             return {
                 "stdout": "",
                 "stderr": str(e),

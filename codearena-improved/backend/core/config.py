@@ -3,8 +3,8 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # Database
-    DATABASE_URL: str = "mongodb+srv://GauravDaware:Gaurav@99@cluster0.xs9jcju.mongodb.net/codearena"
+    # Database (set via env; no default to avoid leaking credentials)
+    DATABASE_URL: str = "mongodb://localhost:27017/codearena"
 
     # Judge0
     JUDGE0_URL: str = "http://localhost:2358"

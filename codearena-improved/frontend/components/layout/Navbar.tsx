@@ -10,8 +10,9 @@ import { useState } from "react";
 
 const navItems = [
   { href: "/practice",  label: "Problems",  icon: Code2 },
+  { href: "/contest",   label: "Contest",   icon: Trophy },
   { href: "/duel",      label: "Duel",      icon: Swords,   badge: "1v1" },
-  { href: "/pairlab",   label: "PairLab",   icon: Users },
+  { href: "/pair",      label: "Pair",      icon: Users },
   { href: "/dashboard", label: "Dev-Tree",  icon: TreePine },
 ];
 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { DevTree } from "@/components/dev-tree/DevTree";
 import { SKILL_TREE_CONFIG } from "@/lib/utils";
+import type { UserSkillEntry } from "@/types";
 import Image from "next/image";
 import { CheckCircle2, XCircle, Zap, Trophy, Flame, Star, TrendingUp } from "lucide-react";
 
@@ -51,9 +52,9 @@ export default function DashboardPage() {
   }
 
   const userSkills: Record<string, number> = {};
-  if (profile?.skills) {
-    for (const s of profile.skills as any[]) {
-      userSkills[s.name] = s.solvedCount || 0;
+  if (profile?.skills && Array.isArray(profile.skills)) {
+    for (const s of profile.skills as UserSkillEntry[]) {
+      userSkills[s.name] = s.solvedCount ?? 0;
     }
   }
 

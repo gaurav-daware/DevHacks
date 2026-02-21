@@ -63,7 +63,7 @@ export default function DuelArenaPage() {
         start();
       })
       .catch(() => { router.push("/duel"); });
-  }, [duelId]);
+  }, [duelId, router, start]);
 
   // WebSocket for real-time updates
   const { send, connected } = useWebSocket(
@@ -98,16 +98,28 @@ export default function DuelArenaPage() {
   }, [code, connected, send, session?.user?.id]);
 
   const handleSubmit = async () => {
-    if (!duel || !session || running) return;
+    if (!duel || !session || running) {
+      console.warn("Cannot submit: duel or session missing or already running", { duel: !!duel, session: !!session, running });
+      return;
+    }
     setRunning(true);
 
     try {
+      console.log("Submitting duel code to /api/submit", { duelId, language, codeLength: code.length });
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ problemSlug: duel.problem.slug, code, language, duelId }),
       });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Duel API error response:", res.status, errorText);
+        throw new Error(`API returned ${res.status}: ${errorText}`);
+      }
+      
       const data = await res.json();
+      console.log("Duel submit response received:", data);
 
       const progress = Math.round((data.tests_passed / data.total_tests) * 100) || 0;
       setLastError(data.error_output || "");
@@ -135,7 +147,9 @@ export default function DuelArenaPage() {
       });
 
       if (data.status !== "Accepted") setShowAI(true);
-    } catch {
+    } catch (error) {
+      console.error("Duel submit error:", error);
+      setLastError(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setRunning(false);
     }

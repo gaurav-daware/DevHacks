@@ -205,16 +205,4 @@ export function DevTree({ userSkills }: DevTreeProps) {
       </div>
     </div>
   );
-
-  function getNodeStatus(skillId: string): "unlocked" | "available" | "locked" {
-    const config = SKILL_TREE_CONFIG.find((s) => s.id === skillId);
-    if (!config) return "locked";
-    const solved = userSkills[skillId] || 0;
-    if (solved >= config.problemsRequired) return "unlocked";
-    const prereqsMet = config.prereqs.every((prereq) => {
-      const prereqConfig = SKILL_TREE_CONFIG.find((s) => s.id === prereq);
-      return prereqConfig && (userSkills[prereq] || 0) >= prereqConfig.problemsRequired;
-    });
-    return prereqsMet ? "available" : "locked";
-  }
 }

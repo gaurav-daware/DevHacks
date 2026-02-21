@@ -12,6 +12,8 @@ class MatchmakingService:
     def __init__(self):
         # {user_id: {"queue_id": str, "rating": int, "matched_duel_id": str|None}}
         self._queue: Dict[str, dict] = {}
+        # Stores completed matches so both players can poll: {queue_id: duel_id}
+        self._matches: Dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     async def join_queue(
@@ -43,7 +45,11 @@ class MatchmakingService:
                 duel_id = str(uuid.uuid4())
                 opponent_entry = self._queue.pop(best_match)
 
-                # Mark the match
+                # Store the match result so the opponent can poll and find it
+                self._matches[opponent_entry["queue_id"]] = duel_id
+                # Store the match result for the joiner too (immediate response)
+                self._matches[queue_id] = duel_id
+
                 return queue_id, duel_id, best_match
             else:
                 # Add to queue
@@ -57,6 +63,10 @@ class MatchmakingService:
     async def check_match(self, queue_id: str) -> Optional[str]:
         """Poll for match status by queue_id."""
         async with self._lock:
+            # First check the completed matches dict (fast path)
+            if queue_id in self._matches:
+                return self._matches[queue_id]
+            # Fallback: check if still in queue with a matched_duel_id
             for uid, entry in self._queue.items():
                 if entry.get("queue_id") == queue_id:
                     return entry.get("matched_duel_id")

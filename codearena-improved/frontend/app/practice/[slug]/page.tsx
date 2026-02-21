@@ -77,22 +77,36 @@ export default function ProblemPage() {
   };
 
   const handleRun = async () => {
-    if (!problem || !session) return;
+    if (!problem || !session) {
+      console.warn("Cannot run: problem or session missing", { problem: !!problem, session: !!session });
+      return;
+    }
     setRunning(true);
     setActiveTab("results");
     try {
+      console.log("Submitting code to /api/submit", { problemSlug: slug, language, codeLength: code.length });
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ problemSlug: slug, code, language }),
       });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("API error response:", res.status, errorText);
+        throw new Error(`API returned ${res.status}: ${errorText}`);
+      }
+      
       const data = await res.json();
+      console.log("Submit response received:", data);
       setResults(data.results || []);
       setSubmissionStatus(data.status);
       setLastError(data.error_output || "");
       if (data.status !== "Accepted") setShowAI(true);
-    } catch {
+    } catch (error) {
+      console.error("Submit error:", error);
       setResults([]);
+      setLastError(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setRunning(false);
     }

@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+import type { UserSkillEntry } from "@/types";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
+    console.log("[/api/submit] Request received, session:", session?.user?.email);
+    
     if (!session?.user?.id) {
+      console.log("[/api/submit] Unauthorized - no session");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { problemSlug, code, language } = await req.json();
+    console.log("[/api/submit] Parsed request:", { problemSlug, language, codeLength: code?.length });
 
     // Fetch problem with test cases
     const problem = await prisma.problem.findUnique({
@@ -20,8 +26,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (!problem) {
+      console.log("[/api/submit] Problem not found:", problemSlug);
       return NextResponse.json({ error: "Problem not found" }, { status: 404 });
     }
+
+    console.log("[/api/submit] Found problem, calling backend at", `${BACKEND_URL}/judge/submit`);
 
     // Send to FastAPI backend for execution
     const response = await fetch(`${BACKEND_URL}/judge/submit`, {
@@ -39,10 +48,12 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const err = await response.text();
+      console.error("[/api/submit] Backend error:", response.status, err);
       return NextResponse.json({ error: `Execution failed: ${err}` }, { status: 500 });
     }
 
     const result = await response.json();
+    console.log("[/api/submit] Backend response received:", result.status);
 
     // Store submission in DB
     const submission = await prisma.submission.create({
@@ -78,7 +89,7 @@ export async function POST(req: NextRequest) {
 
       if (user && !user.solvedProblems.includes(problem.id)) {
         const xpGain = problem.difficulty === "Easy" ? 50 : problem.difficulty === "Medium" ? 100 : 200;
-        const currentSkills = (user.skills as any[]) || [];
+        const currentSkills = (user.skills as UserSkillEntry[] | null) ?? [];
 
         // Update skill progress
         const updatedSkills = updateSkills(currentSkills, problem.tags, problem.id);
@@ -89,33 +100,34 @@ export async function POST(req: NextRequest) {
             solvedProblems: { push: problem.id },
             xp: { increment: xpGain },
             totalSolved: { increment: 1 },
-            skills: updatedSkills,
+            skills: updatedSkills as unknown as Prisma.InputJsonValue,
           },
         });
       }
     }
 
+    console.log("[/api/submit] Submission stored successfully, returning to client");
     return NextResponse.json({ ...result, submissionId: submission.id });
   } catch (error) {
-    console.error("Submit error:", error);
-    return NextResponse.json({ error: "Submission failed" }, { status: 500 });
+    console.error("[/api/submit] Unhandled error:", error);
+    return NextResponse.json({ error: "Submission failed", details: String(error) }, { status: 500 });
   }
 }
 
 function updateSkills(
-  currentSkills: any[],
+  currentSkills: UserSkillEntry[],
   problemTags: string[],
   _problemId: string
-): any[] {
-  const skillMap = new Map(currentSkills.map((s: any) => [s.name, s]));
+): UserSkillEntry[] {
+  const skillMap = new Map(currentSkills.map((s) => [s.name, s]));
 
   for (const tag of problemTags) {
     const existing = skillMap.get(tag) || { name: tag, level: 0, unlocked: false, solvedCount: 0 };
     existing.solvedCount = (existing.solvedCount || 0) + 1;
 
     // Level up logic: every 3 solves = 1 level
-    const newLevel = Math.floor(existing.solvedCount / 3);
-    if (newLevel > existing.level) {
+    const newLevel = Math.floor((existing.solvedCount ?? 0) / 3);
+    if (newLevel > (existing.level ?? 0)) {
       existing.level = newLevel;
       existing.unlocked = true;
     }
