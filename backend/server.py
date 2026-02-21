@@ -1011,6 +1011,27 @@ Output: False
         ]
         await db.problems.insert_many(problems)
         logger.info(f"Seeded {len(problems)} sample problems")
+        
+        # Add additional problems
+        for prob in ADDITIONAL_PROBLEMS:
+            prob_doc = {
+                "id": str(uuid.uuid4()),
+                "title": prob["title"],
+                "description": prob["description"],
+                "difficulty": prob["difficulty"],
+                "tags": prob["tags"],
+                "sample_input": prob["sample_input"],
+                "sample_output": prob["sample_output"],
+                "test_cases": prob["test_cases"],
+                "hints": prob["hints"],
+                "constraints": prob["constraints"],
+                "time_limit": prob["time_limit"],
+                "solved_count": 0,
+                "created_by": "admin",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.problems.insert_one(prob_doc)
+        logger.info(f"Seeded {len(ADDITIONAL_PROBLEMS)} additional problems")
 
 # ───────────────────────────────────────────────
 # DAILY CHALLENGE ROUTES
