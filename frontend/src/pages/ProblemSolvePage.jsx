@@ -274,6 +274,10 @@ export default function ProblemSolvePage() {
               <TabsTrigger value="submissions" className="text-xs h-7 data-[state=active]:bg-[#121215]">
                 Submissions
               </TabsTrigger>
+              <TabsTrigger value="discussions" className="text-xs h-7 data-[state=active]:bg-[#121215]">
+                <MessageSquare className="w-3 h-3 mr-1" />
+                Discuss
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="description" className="flex-1 overflow-y-auto p-4 mt-0">
