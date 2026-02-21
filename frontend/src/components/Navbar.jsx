@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Code2, Trophy, LayoutDashboard, User, LogOut,
-  Menu, X, Shield, Zap
+  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords
 } from "lucide-react";
 
 export default function Navbar() {
@@ -25,6 +25,11 @@ export default function Navbar() {
   const navLinks = [
     { to: "/problems", label: "Problems", icon: Code2 },
     { to: "/contests", label: "Contests", icon: Trophy },
+    { to: "/daily", label: "Daily", icon: Calendar },
+    { to: "/roadmap", label: "Roadmap", icon: Route },
+    { to: "/leaderboard", label: "Rankings", icon: Medal },
+    { to: "/interview-kits", label: "Interview", icon: Briefcase },
+    { to: "/battle", label: "Battle", icon: Swords },
   ];
 
   const isActive = (path) => location.pathname.startsWith(path);
