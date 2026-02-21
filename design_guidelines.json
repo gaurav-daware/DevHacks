@@ -1,0 +1,234 @@
+{
+  "design_system": {
+    "brand_identity": {
+      "name": "CodeArena",
+      "essence": "The Cyberpunk Colosseum for Coders",
+      "emotional_tone": "High-Performance, Focus, Adrenaline, Elite",
+      "visual_archetype": "Neon Operator (Cyberpunk + Swiss Precision)"
+    },
+    "typography": {
+      "font_family": {
+        "primary": "Inter, sans-serif",
+        "secondary": "Space Grotesk, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "usage": {
+        "headings": "Space Grotesk",
+        "body": "Inter",
+        "code": "JetBrains Mono",
+        "ui_labels": "Inter (Uppercase, tracking-widest)"
+      },
+      "scale": {
+        "display": "text-6xl md:text-8xl font-bold tracking-tighter leading-none",
+        "h1": "text-4xl md:text-5xl font-bold tracking-tight",
+        "h2": "text-3xl font-semibold tracking-tight",
+        "h3": "text-xl font-medium tracking-normal",
+        "body_lg": "text-lg leading-relaxed",
+        "body": "text-base leading-relaxed text-muted-foreground",
+        "caption": "text-sm text-muted-foreground uppercase tracking-wider"
+      }
+    },
+    "colors": {
+      "mode": "dark",
+      "palette": {
+        "background": {
+          "default": "#050505",
+          "surface": "#09090b",
+          "card": "#121215",
+          "overlay": "rgba(5, 5, 5, 0.8)"
+        },
+        "primary": {
+          "main": "#22c55e",
+          "hover": "#16a34a",
+          "foreground": "#ffffff"
+        },
+        "accent": {
+          "main": "#3b82f6",
+          "glow": "rgba(59, 130, 246, 0.5)"
+        },
+        "semantic": {
+          "success": "#22c55e",
+          "error": "#ef4444",
+          "warning": "#eab308",
+          "info": "#3b82f6"
+        },
+        "border": {
+          "default": "#27272a",
+          "active": "#3f3f46"
+        },
+        "text": {
+          "primary": "#fafafa",
+          "secondary": "#a1a1aa",
+          "tertiary": "#52525b"
+        }
+      },
+      "gradients": {
+        "hero_glow": "radial-gradient(circle at center, rgba(59, 130, 246, 0.15), transparent 70%)",
+        "card_shimmer": "linear-gradient(110deg, transparent, rgba(255, 255, 255, 0.03), transparent)"
+      }
+    },
+    "visual_enhancers": {
+      "radius": "rounded-sm",
+      "shadows": {
+        "card": "0 1px 2px 0 rgba(0, 0, 0, 0.5)",
+        "glow": "0 0 20px rgba(34, 197, 94, 0.2)",
+        "neon_border": "0 0 0 1px #22c55e, 0 0 10px rgba(34, 197, 94, 0.5)"
+      },
+      "effects": {
+        "glass": "backdrop-blur-xl bg-black/60 border border-white/10",
+        "scanlines": "repeating-linear-gradient(to bottom, transparent, transparent 2px, rgba(0, 0, 0, 0.2) 3px)"
+      }
+    }
+  },
+  "layout_strategies": {
+    "landing_page": {
+      "structure": "Hero (Kinetic Typography) > Bento Grid Features > Live Leaderboard Preview > CTA",
+      "hero_style": "Split layout or Center focused. Background: Animated scrolling code (opacity 0.1).",
+      "key_elements": [
+        "Dynamic Typewriter Effect for Hero Text",
+        "Glowing 'Start Coding' CTA",
+        "Floating 3D-style Code Snippets (Parallax)"
+      ]
+    },
+    "dashboard": {
+      "grid": "Bento Grid (grid-cols-1 md:grid-cols-4 gap-4)",
+      "widgets": [
+        {"name": "Profile Stats", "span": "col-span-1"},
+        {"name": "Heatmap", "span": "col-span-2"},
+        {"name": "Active Contests", "span": "col-span-1"},
+        {"name": "Recent Problems", "span": "col-span-4"}
+      ]
+    },
+    "arena_solve_page": {
+      "layout": "Split Screen (Resizable Panel)",
+      "left_panel": "Problem Description (Markdown View), Tabs for Description/Hints/Submissions",
+      "right_panel": "Monaco Editor (Top), Console/TestCases (Bottom)",
+      "header": "Minimal. Timer (Center), Submit Button (Right)"
+    },
+    "contest_page": {
+      "vibe": "Esports Tournament",
+      "header": "Massive Digital Clock",
+      "leaderboard": "Live updating table with 'rank change' animations (green up arrow / red down arrow)"
+    }
+  },
+  "component_library": {
+    "core_components": {
+      "Button": {
+        "path": "@/components/ui/button",
+        "style": "Sharp edges (rounded-sm). Primary: Solid Green. Secondary: Outline with hover glow.",
+        "variants": ["default", "outline", "ghost", "destructive", "link", "neon"]
+      },
+      "Card": {
+        "path": "@/components/ui/card",
+        "style": "Dark surface (#121215). Border: 1px solid #27272a. Hover: Border brightens."
+      },
+      "Input": {
+        "path": "@/components/ui/input",
+        "style": "Flat, dark bg. Focus: Ring-2 ring-primary/50."
+      },
+      "Badge": {
+        "path": "@/components/ui/badge",
+        "style": "Solid colors. Difficulty Badges: Easy (Green), Medium (Yellow), Hard (Red)."
+      }
+    },
+    "custom_components": {
+      "CodeEditor": {
+        "library": "@monaco-editor/react",
+        "theme": "vs-dark",
+        "props": "minimap: { enabled: false }, fontSize: 14, fontFamily: 'JetBrains Mono'"
+      },
+      "LeaderboardTable": {
+        "base": "@/components/ui/table",
+        "features": "Sticky header, Row highlighting for current user, Animation on rank change"
+      },
+      "AiHintModal": {
+        "base": "@/components/ui/dialog",
+        "style": "Glassmorphism background. Icon: Glowing Brain/Sparkle."
+      },
+      "PlaybackViewer": {
+        "description": "A read-only Monaco editor instance that replays typing events.",
+        "controls": "Play, Pause, Speed (1x, 2x, 4x), Seek Bar"
+      }
+    }
+  },
+  "assets": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1759661881353-5b9cc55e1cf4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwxfHxmdXR1cmlzdGljJTIwY29kaW5nJTIwc2V0dXAlMjBuZW9uJTIwbGlnaHRzfGVufDB8fHx8MTc3MTY3MzcyMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Futuristic code lines for background texture",
+        "usage": "Landing page hero section background with overlay"
+      },
+      {
+        "category": "feature_coding",
+        "url": "https://images.unsplash.com/photo-16027818/pexels-photo-16027818.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Focus mode coding setup",
+        "usage": "Feature section: Practice Mode illustration"
+      },
+      {
+        "category": "feature_contest",
+        "url": "https://images.pexels.com/photos/9071735/pexels-photo-9071735.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Gamer/Coder in neon environment",
+        "usage": "Feature section: Contest Mode illustration"
+      },
+      {
+        "category": "feature_ai",
+        "url": "https://images.unsplash.com/photo-1689969599087-4120a19816ff?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHw0fHxmdXR1cmlzdGljJTIwY29kaW5nJTIwc2V0dXAlMjBuZW9uJTIwbGlnaHRzfGVufDB8fHx8MTc3MTY3MzcyMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Neon vending machine / abstract tech",
+        "usage": "Feature section: AI Assistance"
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5px or 2px. Size 16-24px."
+    }
+  },
+  "interactions": {
+    "motion": {
+      "library": "framer-motion",
+      "variants": {
+        "fadeIn": {
+          "initial": { "opacity": 0, "y": 20 },
+          "animate": { "opacity": 1, "y": 0 },
+          "transition": { "duration": 0.4 }
+        },
+        "staggerContainer": {
+          "hidden": { "opacity": 0 },
+          "show": {
+            "opacity": 1,
+            "transition": { "staggerChildren": 0.1 }
+          }
+        },
+        "hoverScale": {
+          "whileHover": { "scale": 1.02 },
+          "whileTap": { "scale": 0.98 }
+        }
+      }
+    },
+    "toast": {
+      "library": "sonner",
+      "theme": "dark",
+      "position": "bottom-right"
+    }
+  },
+  "accessibility": {
+    "contrast_check": "Ensure primary text (#fafafa) on bg (#050505) meets WCAG AAA.",
+    "focus_states": "Visible focus ring (ring-2 ring-primary) on all interactive elements.",
+    "aria_labels": "Required for all icon-only buttons (e.g., Editor toolbar actions)."
+  },
+  "instructions_to_main_agent": [
+    "Install dependencies: `npm install @monaco-editor/react framer-motion socket.io-client date-fns recharts react-markdown`",
+    "Configure Tailwind: Add the custom colors (zinc-950 based) and fonts (Space Grotesk, JetBrains Mono) to `tailwind.config.js`.",
+    "Monaco Editor: Ensure the editor container has a fixed height or flex-grow to prevent layout collapse.",
+    "Socket.IO: Use a React Context or Hook to manage the socket connection globally to avoid multiple connections.",
+    "Layouts: Use `flex-col` for mobile and `grid` for desktop. Always assume mobile-first.",
+    "Theme: Force 'dark' class on the HTML element or Body. Do not implement a light mode toggle unless requested later."
+  ],
+  "universal_guidelines": [
+    "Do NOT use generic 'center-aligned' layouts. Use grids and split layouts.",
+    "Do NOT use gradients on text unless it's a very large headline.",
+    "Inputs and Cards should have subtle borders, not just shadow.",
+    "Use 'Sonner' for all notifications.",
+    "Add 'data-testid' to all buttons, inputs, and forms."
+  ]
+}
