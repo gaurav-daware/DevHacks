@@ -72,7 +72,7 @@ process.stdin.on('end', () => {
 
 export default function ProblemSolvePage() {
   const { problemId } = useParams();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
 
   const [problem, setProblem] = useState(null);
@@ -163,6 +163,9 @@ export default function ProblemSolvePage() {
       setResult(res.data);
       if (res.data.verdict === "Accepted") {
         toast.success("Accepted! Great job!");
+        if (refreshUser) {
+          await refreshUser();
+        }
       } else {
         toast.error(`${res.data.verdict}`);
       }
@@ -340,11 +343,10 @@ export default function ProblemSolvePage() {
                     <button
                       key={l}
                       onClick={() => setHintLevel(l)}
-                      className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${
-                        hintLevel === l
-                          ? "border-primary/50 bg-primary/10 text-primary"
-                          : "border-[#27272a] text-muted-foreground hover:border-[#3f3f46]"
-                      }`}
+                      className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${hintLevel === l
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-[#27272a] text-muted-foreground hover:border-[#3f3f46]"
+                        }`}
                       data-testid={`hint-level-${l}`}
                     >
                       Level {l}

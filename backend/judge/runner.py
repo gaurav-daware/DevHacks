@@ -48,18 +48,16 @@ class CodeRunner:
             if config.compile_cmd:
                 # Replace placeholders
                 cmd = [c.replace("{src}", str(src_file)).replace("{bin}", bin_path) for c in config.compile_cmd]
+                import subprocess
+                def run_compile():
+                    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 
-                comp_proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await comp_proc.communicate()
+                comp_res = await asyncio.to_thread(run_compile)
                 
-                if comp_proc.returncode != 0:
+                if comp_res.returncode != 0:
                     return CodeExecutionResult(
                         "Compilation Error", 
-                        stderr.decode().strip()[:500], 
+                        comp_res.stderr.decode().strip()[:500], 
                         0, 
                         False
                     )
@@ -78,31 +76,32 @@ class CodeRunner:
             if config.interpreted:
                 run_cmd.append(str(src_file))
 
-            t0 = asyncio.get_event_loop().time()
-            proc = await asyncio.create_subprocess_exec(
-                *run_cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(input=test_input.encode()),
+            import subprocess
+            import time
+            def run_exec():
+                return subprocess.run(
+                    run_cmd,
+                    input=test_input.encode(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     timeout=time_limit
                 )
-                elapsed = round(asyncio.get_event_loop().time() - t0, 3)
-                
-                stdout_str = stdout.decode().strip()
-                stderr_str = stderr.decode().strip()
 
-                if proc.returncode != 0:
+            t0 = time.time()
+            try:
+                res = await asyncio.to_thread(run_exec)
+                elapsed = round(time.time() - t0, 3)
+                
+                stdout_str = res.stdout.decode().strip()
+                stderr_str = res.stderr.decode().strip()
+
+                if res.returncode != 0:
                     return CodeExecutionResult(
                         "Runtime Error",
-                        stderr_str[:500] if stderr_str else f"Exit code {proc.returncode}",
+                        stderr_str[:500] if stderr_str else f"Exit code {res.returncode}",
                         elapsed,
                         False,
-                        exit_code=proc.returncode
+                        exit_code=res.returncode
                     )
 
                 norm_actual = normalize_output(stdout_str)
@@ -119,15 +118,17 @@ class CodeRunner:
                         expected=expected.strip()[:200]
                     )
 
-            except (asyncio.TimeoutError, asyncio.exceptions.TimeoutError):
-                try:
-                    proc.kill()
-                    await proc.wait()
-                except Exception:
-                    pass
+            except subprocess.TimeoutExpired:
                 return CodeExecutionResult("Time Limit Exceeded", "Execution timed out", time_limit, False)
 
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            with open("crash_log.txt", "w") as f:
+                f.write(f"Exception Type: {type(e)}\n")
+                f.write(f"Exception Str: {repr(str(e))}\n")
+                f.write(f"Traceback:\n{tb}\n")
+                
             return CodeExecutionResult("System Error", str(e)[:200], 0, False)
         finally:
             # 3. Cleanup

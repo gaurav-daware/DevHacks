@@ -98,9 +98,9 @@ export default function GlobalLeaderboardPage() {
           {[1, 0, 2].map((index) => {
             const entry = leaderboard[index];
             if (!entry) return null;
-            
+
             return (
-              <Card 
+              <Card
                 key={entry.user_id}
                 className={`${getRankBg(entry.rank)} ${entry.rank === 1 ? 'transform -translate-y-4' : ''}`}
               >
@@ -138,18 +138,17 @@ export default function GlobalLeaderboardPage() {
                   <th className="p-4 font-medium">Rank</th>
                   <th className="p-4 font-medium">User</th>
                   <th className="p-4 font-medium text-center">Solved</th>
-                  <th className="p-4 font-medium text-center">Submissions</th>
+                  <th className="p-4 font-medium text-center">Avg Time</th>
                   <th className="p-4 font-medium text-center">Accuracy</th>
                   <th className="p-4 font-medium text-right">Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {leaderboard.map((entry) => (
-                  <tr 
+                  <tr
                     key={entry.user_id}
-                    className={`hover:bg-zinc-800/30 transition-colors ${
-                      entry.is_current_user ? 'bg-primary/5' : ''
-                    }`}
+                    className={`hover:bg-zinc-800/30 transition-colors ${entry.is_current_user ? 'bg-primary/5' : ''
+                      }`}
                   >
                     <td className="p-4">
                       <div className="flex items-center gap-2">
@@ -175,13 +174,13 @@ export default function GlobalLeaderboardPage() {
                       <span className="text-white font-medium">{entry.solved_count}</span>
                     </td>
                     <td className="p-4 text-center">
-                      <span className="text-muted-foreground">{entry.total_submissions}</span>
+                      <span className="text-muted-foreground">{entry.avg_time}s</span>
                     </td>
                     <td className="p-4 text-center">
                       <Badge variant="outline" className={
                         entry.accuracy >= 70 ? 'border-emerald-500/30 text-emerald-400' :
-                        entry.accuracy >= 40 ? 'border-amber-500/30 text-amber-400' :
-                        'border-red-500/30 text-red-400'
+                          entry.accuracy >= 40 ? 'border-amber-500/30 text-amber-400' :
+                            'border-red-500/30 text-red-400'
                       }>
                         {entry.accuracy}%
                       </Badge>

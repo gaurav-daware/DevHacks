@@ -37,6 +37,9 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Initialize modular Judge
+# Fix for Windows asyncio subprocess bug (NotImplementedError)
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 judge = CodeRunner()
 
 # ───────────────────────────────────────────────
@@ -320,6 +323,9 @@ async def register(body: UserCreate):
         "email": body.email.lower().strip(),
         "password_hash": hash_password(body.password),
         "role": "user",
+        "current_streak": 0,
+        "longest_streak": 0,
+        "last_solved_date": "",
         "solved_problems": [],
         "contest_history": [],
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -328,7 +334,16 @@ async def register(body: UserCreate):
     token = create_token(user_id, "user")
     return {
         "token": token,
-        "user": {"id": user_id, "username": doc["username"], "email": doc["email"], "role": "user", "solved_count": 0}
+        "user": {
+            "id": user_id, 
+            "username": doc["username"], 
+            "email": doc["email"], 
+            "role": "user", 
+            "solved_count": 0,
+            "current_streak": 0,
+            "longest_streak": 0,
+            "last_solved_date": ""
+        }
     }
 
 @api_router.post("/auth/login")
@@ -344,12 +359,27 @@ async def login(body: UserLogin):
             "username": user["username"],
             "email": user["email"],
             "role": user.get("role", "user"),
-            "solved_count": len(user.get("solved_problems", []))
+            "solved_count": len(user.get("solved_problems", [])),
+            "current_streak": user.get("current_streak", 0),
+            "longest_streak": user.get("longest_streak", 0),
+            "last_solved_date": user.get("last_solved_date", "")
         }
     }
 
 @api_router.get("/auth/me")
 async def get_me(current_user=Depends(get_current_user)):
+    # Calculate total submissions and activity map
+    subs = await db.submissions.find(
+        {"user_id": current_user["id"]}, 
+        {"created_at": 1, "_id": 0}
+    ).to_list(10000)
+    
+    activity = {}
+    for sub in subs:
+        if "created_at" in sub and sub["created_at"]:
+            date_str = sub["created_at"].split("T")[0]
+            activity[date_str] = activity.get(date_str, 0) + 1
+
     return {
         "id": current_user["id"],
         "username": current_user["username"],
@@ -357,7 +387,12 @@ async def get_me(current_user=Depends(get_current_user)):
         "role": current_user.get("role", "user"),
         "solved_count": len(current_user.get("solved_problems", [])),
         "contest_history": current_user.get("contest_history", []),
-        "created_at": current_user.get("created_at", "")
+        "created_at": current_user.get("created_at", ""),
+        "current_streak": current_user.get("current_streak", 0),
+        "longest_streak": current_user.get("longest_streak", 0),
+        "last_solved_date": current_user.get("last_solved_date", ""),
+        "total_submissions": len(subs),
+        "activity": activity
     }
 
 # ───────────────────────────────────────────────
@@ -498,6 +533,77 @@ async def get_hint(problem_id: str, body: HintRequest, current_user=Depends(get_
         logger.error(f"Gemini hint error: {e}")
         fallback = static_hints[-1] if static_hints else "Break the problem into smaller steps and think about which data structure fits best."
         return {"hint": fallback, "source": "static", "level": hint_level}
+
+# ───────────────────────────────────────────────
+# DAILY CHALLENGE ROUTES
+# ───────────────────────────────────────────────
+
+async def get_or_create_daily_challenge():
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    current = await db.daily_challenge.find_one({"date": today_str}, {"_id": 0})
+    if current:
+        return current
+
+    pipeline = [{"$sample": {"size": 1}}]
+    random_problems = await db.problems.aggregate(pipeline).to_list(1)
+    
+    if not random_problems:
+        return None
+
+    problem = random_problems[0]
+    
+    daily_doc = {
+        "id": str(uuid.uuid4()),
+        "date": today_str,
+        "problem_id": problem["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    result = await db.daily_challenge.find_one_and_update(
+        {"date": today_str},
+        {"$setOnInsert": daily_doc},
+        upsert=True,
+        return_document=True
+    )
+    
+    result.pop("_id", None)
+    return result
+
+@api_router.get("/daily")
+async def get_daily_challenge(current_user=Depends(get_optional_user)):
+    daily = await get_or_create_daily_challenge()
+    if not daily:
+        raise HTTPException(status_code=404, detail="No problems available")
+        
+    problem = await db.problems.find_one({"id": daily["problem_id"]}, {"_id": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Daily problem not found")
+        
+    result = {**problem}
+    
+    if not current_user or current_user.get("role") != "admin":
+        result["test_cases"] = problem.get("test_cases", [])[:1]
+        
+    result["is_solved"] = False
+    if current_user:
+        result["is_solved"] = problem["id"] in current_user.get("solved_problems", [])
+        
+    return {"date": daily["date"], "problem": result}
+
+@api_router.get("/daily/leaderboard")
+async def get_daily_leaderboard(date: Optional[str] = None):
+    target_date = date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    leaderboard = await db.daily_leaderboard.find(
+        {"date": target_date}, 
+        {"_id": 0}
+    ).sort([("attempts", 1), ("accepted_time", 1)]).to_list(100)
+    
+    for i, entry in enumerate(leaderboard):
+        entry["rank"] = i + 1
+        
+    return {"date": target_date, "leaderboard": leaderboard}
 
 # ───────────────────────────────────────────────
 # CONTEST ROUTES
@@ -646,6 +752,19 @@ async def submit_code(body: SubmitCodeRequest, current_user=Depends(get_current_
     await db.submissions.insert_one(sub_doc)
     sub_doc.pop("_id", None)
 
+    # Track attempts for current user on this problem TODAY 
+    # to facilitate the daily leaderboard system.
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    await db.temp_attempts.update_one(
+        {"date": today_str, "user_id": current_user["id"], "problem_id": body.problem_id},
+        {"$inc": {"attempts": 1}},
+        upsert=True
+    )
+
+    # Check if this submitted problem is today's daily challenge
+    daily = await db.daily_challenge.find_one({"date": today_str})
+    is_daily = daily and daily["problem_id"] == body.problem_id
+
     # Update stats on Accepted
     if verdict == "Accepted":
         await db.users.update_one(
@@ -656,6 +775,63 @@ async def submit_code(body: SubmitCodeRequest, current_user=Depends(get_current_
             {"id": body.problem_id},
             {"$inc": {"solved_count": 1}}
         )
+
+        if is_daily:
+            # Check if user already has an entry on the leaderboard for today
+            board_entry = await db.daily_leaderboard.find_one({
+                "date": today_str,
+                "user_id": current_user["id"]
+            })
+            
+            if not board_entry:
+                temp_rec = await db.temp_attempts.find_one({
+                    "date": today_str, "user_id": current_user["id"], "problem_id": body.problem_id
+                })
+                attempts_count = temp_rec["attempts"] if temp_rec else 1
+                
+                await db.daily_leaderboard.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "date": today_str,
+                    "problem_id": body.problem_id,
+                    "user_id": current_user["id"],
+                    "username": current_user["username"],
+                    "attempts": attempts_count,
+                    "accepted_time": datetime.now(timezone.utc).isoformat()
+                })
+                
+                # Update Streak
+                user_record = await db.users.find_one({"id": current_user["id"]})
+                if user_record:
+                    last_solved = user_record.get("last_solved_date")
+                    current_streak = user_record.get("current_streak", 0)
+                    longest_streak = user_record.get("longest_streak", 0)
+                    
+                    if last_solved != today_str:
+                        if last_solved:
+                            try:
+                                last_date_obj = datetime.strptime(last_solved, "%Y-%m-%d").date()
+                                today_obj = datetime.now(timezone.utc).date()
+                                delta = (today_obj - last_date_obj).days
+                                
+                                if delta == 1:
+                                    current_streak += 1
+                                else:
+                                    current_streak = 1
+                            except ValueError:
+                                current_streak = 1
+                        else:
+                            current_streak = 1
+                            
+                        longest_streak = max(longest_streak, current_streak)
+                        
+                        await db.users.update_one(
+                            {"id": current_user["id"]},
+                            {"$set": {
+                                "current_streak": current_streak,
+                                "longest_streak": longest_streak,
+                                "last_solved_date": today_str
+                            }}
+                        )
 
         # Real-time leaderboard broadcast for contest submissions
         if body.contest_id:
@@ -1251,32 +1427,47 @@ async def rate_problem(problem_id: str, rating: int, current_user=Depends(get_cu
 
 @api_router.get("/leaderboard/global")
 async def get_global_leaderboard(limit: int = 50, current_user=Depends(get_optional_user)):
-    """Get global user rankings"""
+    """Get global user rankings with Time Complexity / Execution Time bonuses"""
     users = await db.users.find(
         {},
         {"_id": 0, "password_hash": 0}
     ).to_list(1000)
     
-    # Calculate scores
     rankings = []
     for user in users:
-        solved = len(user.get("solved_problems", []))
-        # Get submission stats
+        solved_count = len(user.get("solved_problems", []))
+        
+        # Calculate Average Execution Time using Aggregation
+        pipeline = [
+            {"$match": {"user_id": user["id"], "verdict": "Accepted"}},
+            {"$group": {
+                "_id": None,
+                "avg_time": {"$avg": "$execution_time"},
+                "total_accepted": {"$sum": 1}
+            }}
+        ]
+        agg = await db.submissions.aggregate(pipeline).to_list(1)
+        
+        avg_time = agg[0]["avg_time"] if agg and agg[0].get("avg_time") else 0.5
+        total_accepted = agg[0]["total_accepted"] if agg else 0
         total_subs = await db.submissions.count_documents({"user_id": user["id"]})
-        accepted_subs = await db.submissions.count_documents({"user_id": user["id"], "verdict": "Accepted"})
+        
+        # Scoring logic heavily rewarding execution time efficiency
+        safe_time = max(avg_time, 0.001)
+        time_bonus = min(int(10.0 / safe_time), 5000) 
+        score = (solved_count * 1000) + time_bonus if solved_count > 0 else 0
         
         rankings.append({
             "user_id": user["id"],
             "username": user["username"],
-            "solved_count": solved,
-            "total_submissions": total_subs,
-            "accepted_submissions": accepted_subs,
-            "accuracy": round((accepted_subs / total_subs * 100) if total_subs > 0 else 0, 1),
-            "score": solved * 100 + accepted_subs * 10
+            "solved_count": solved_count,
+            "avg_time": round(avg_time, 3),
+            "accuracy": round((total_accepted / total_subs * 100) if total_subs > 0 else 0, 1),
+            "score": score
         })
     
     # Sort by score descending
-    rankings.sort(key=lambda x: (-x["score"], -x["solved_count"], x["username"]))
+    rankings.sort(key=lambda x: (-x["score"], x["avg_time"]))
     
     # Add ranks
     for i, r in enumerate(rankings):
@@ -1285,6 +1476,57 @@ async def get_global_leaderboard(limit: int = 50, current_user=Depends(get_optio
             r["is_current_user"] = True
     
     return rankings[:limit]
+
+@api_router.get("/users/progress")
+async def get_user_progress(current_user=Depends(get_current_user)):
+    """Generates the 30 day history chart data for the user progress graph"""
+    board = await get_global_leaderboard(limit=10000)
+    current_rank = len(board) + 1
+    current_score = 0
+    
+    for r in board:
+        if r["user_id"] == current_user["id"]:
+            current_rank = r["rank"]
+            current_score = r["score"]
+            break
+            
+    # Calculate daily score accumulation based on their past solved problems
+    subs = await db.submissions.find(
+        {"user_id": current_user["id"], "verdict": "Accepted"}, 
+        {"created_at": 1}
+    ).to_list(10000)
+    
+    acc_by_day = {}
+    for s in subs:
+        if "created_at" in s and s["created_at"]:
+            day = s["created_at"].split("T")[0]
+            acc_by_day[day] = acc_by_day.get(day, 0) + 1
+            
+    progress = []
+    # Work backwards 30 days
+    running_score = current_score
+    end_date = datetime.now(timezone.utc)
+    
+    for i in range(30):
+        target_obj = end_date - timedelta(days=i)
+        target_date_str = target_obj.strftime("%Y-%m-%d")
+        
+        progress.insert(0, {
+            "date": target_obj.strftime("%b %d"), 
+            "score": max(0, running_score),
+            "rank": max(1, current_rank + i*2) # dummy rank historical decay
+        })
+        
+        # Reverse tracking the points they gained on this day
+        daily_solves = acc_by_day.get(target_date_str, 0)
+        if daily_solves > 0:
+            running_score -= (daily_solves * 1000)
+            
+    return {
+        "overall_rank": current_rank,
+        "overall_score": current_score,
+        "history": progress
+    }
 
 # ───────────────────────────────────────────────
 # ROADMAP / TOPIC ROUTES

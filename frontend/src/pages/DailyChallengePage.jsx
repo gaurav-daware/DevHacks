@@ -20,12 +20,17 @@ export default function DailyChallengePage() {
 
   const loadData = async () => {
     try {
-      const [challengeRes, streakRes] = await Promise.all([
-        api.get("/api/daily-challenge"),
-        user ? api.get("/api/daily-challenge/streak") : Promise.resolve({ data: null })
+      const [challengeRes] = await Promise.all([
+        api.get("/daily"),
       ]);
       setChallenge(challengeRes.data);
-      setStreak(streakRes.data);
+      if (user) {
+        setStreak({
+          current_streak: user.current_streak || 0,
+          total_submissions: user.total_submissions || 0,
+          activity: user.activity || {}
+        });
+      }
     } catch (error) {
       toast.error("Failed to load daily challenge");
     } finally {
@@ -81,7 +86,7 @@ export default function DailyChallengePage() {
                 </div>
               </CardContent>
             </Card>
-            
+
             <Card className="bg-gradient-to-br from-primary/10 to-transparent border-primary/20">
               <CardContent className="p-6 flex items-center gap-4">
                 <div className="p-3 rounded-xl bg-primary/20">
@@ -93,7 +98,7 @@ export default function DailyChallengePage() {
                 </div>
               </CardContent>
             </Card>
-            
+
             <Card className="bg-gradient-to-br from-purple-500/10 to-transparent border-purple-500/20">
               <CardContent className="p-6 flex items-center gap-4">
                 <div className="p-3 rounded-xl bg-purple-500/20">
@@ -120,7 +125,7 @@ export default function DailyChallengePage() {
                     {challenge.problem.difficulty}
                   </Badge>
                 </div>
-                {challenge.is_completed && (
+                {challenge.problem.is_solved && (
                   <div className="flex items-center gap-2 text-emerald-400">
                     <CheckCircle2 className="w-5 h-5" />
                     <span className="font-medium">Completed!</span>
@@ -132,7 +137,7 @@ export default function DailyChallengePage() {
               <p className="text-muted-foreground mb-6 line-clamp-3">
                 {challenge.problem.description?.split('\n')[0]}
               </p>
-              
+
               <div className="flex flex-wrap gap-2 mb-6">
                 {challenge.problem.tags?.map((tag) => (
                   <span key={tag} className="px-3 py-1 rounded-full bg-zinc-800 text-zinc-300 text-sm">
@@ -143,7 +148,7 @@ export default function DailyChallengePage() {
 
               <Link to={`/problems/${challenge.problem.id}`}>
                 <Button className="w-full group" data-testid="solve-daily-btn">
-                  {challenge.is_completed ? "View Solution" : "Solve Challenge"}
+                  {challenge.problem.is_solved ? "Problem Solved! Come back tomorrow" : "Solve Challenge"}
                   <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
@@ -167,12 +172,12 @@ export default function DailyChallengePage() {
                     date.setDate(date.getDate() - i);
                     const dateStr = date.toISOString().split('T')[0];
                     const count = streak.activity[dateStr] || 0;
-                    
+
                     let intensity = "bg-zinc-800";
                     if (count > 0) intensity = "bg-primary/30";
                     if (count >= 3) intensity = "bg-primary/60";
                     if (count >= 5) intensity = "bg-primary";
-                    
+
                     days.push(
                       <div
                         key={dateStr}
