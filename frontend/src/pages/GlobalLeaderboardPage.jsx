@@ -17,7 +17,7 @@ export default function GlobalLeaderboardPage() {
 
   const loadLeaderboard = async () => {
     try {
-      const res = await api.get("/api/leaderboard/global?limit=100");
+      const res = await api.get("/leaderboard/global?limit=100");
       setLeaderboard(res.data);
     } catch (error) {
       toast.error("Failed to load leaderboard");
