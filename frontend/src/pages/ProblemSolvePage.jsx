@@ -413,6 +413,20 @@ export default function ProblemSolvePage() {
                         </span>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground font-mono">{sub.language}</span>
+                          {sub.verdict === "Accepted" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs gap-1 text-primary hover:text-primary/80"
+                              onClick={() => {
+                                setSelectedSubForReview(sub.id);
+                                setShowCodeReview(true);
+                              }}
+                              data-testid={`review-btn-${sub.id}`}
+                            >
+                              <Sparkles className="w-3 h-3" /> Review
+                            </Button>
+                          )}
                           {sub.keystrokes?.length > 5 && (
                             <Button
                               size="sm"
