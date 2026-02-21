@@ -541,6 +541,21 @@ export default function ProblemSolvePage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Code Review dialog */}
+      <Dialog open={showCodeReview} onOpenChange={setShowCodeReview}>
+        <DialogContent className="bg-[#121215] border-[#27272a] max-w-3xl max-h-[80vh] overflow-y-auto" data-testid="code-review-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-heading flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              AI Code Review
+            </DialogTitle>
+          </DialogHeader>
+          {selectedSubForReview && (
+            <CodeReview submissionId={selectedSubForReview} onClose={() => setShowCodeReview(false)} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
