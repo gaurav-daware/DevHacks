@@ -103,29 +103,27 @@ manager = ConnectionManager()
 # PAIR PROGRAMMING WEBSOCKET (Production Architecture)
 # ───────────────────────────────────────────────
 @app.websocket("/ws/pair/{room_id}")
-async def websocket_pair_endpoint(websocket: WebSocket, room_id: str, username: str = "Anonymous"):
-    sid = await pair_manager.connect(websocket, room_id, username)
-    if not sid:
+async def websocket_pair_endpoint(websocket: WebSocket, room_id: str, username: str = "Anonymous", clientId: str = None):
+    if not clientId:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "data": {"message": "clientId is required"}})
+        await websocket.close()
+        return
+
+    client_id = await pair_manager.connect(websocket, room_id, username, clientId)
+    if not client_id:
         return
 
     try:
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
-            await pair_manager.handle_message(room_id, sid, message)
+            await pair_manager.handle_message(room_id, client_id, message)
     except WebSocketDisconnect:
-        pair_manager.disconnect(room_id, sid)
-        await pair_manager.broadcast(room_id, {
-            "type": "presence_update",
-            "data": {
-                "action": "leave",
-                "sid": sid,
-                "participants": pair_manager._get_participants(room_id)
-            }
-        })
+        await pair_manager.disconnect(room_id, client_id)
     except Exception as e:
         logger.error(f"WebSocket error in room {room_id}: {e}")
-        pair_manager.disconnect(room_id, sid)
+        await pair_manager.disconnect(room_id, client_id)
 
 # ───────────────────────────────────────────────
 # PYDANTIC MODELS
