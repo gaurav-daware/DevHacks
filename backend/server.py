@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+# from emergentintegrations.llm.chat import LlmChat, UserMessage
 import os
 import logging
 import uuid
@@ -24,6 +24,7 @@ import asyncio
 import time
 from pathlib import Path
 from additional_problems import ADDITIONAL_PROBLEMS
+from judge import CodeRunner
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -34,6 +35,9 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+# Initialize modular Judge
+judge = CodeRunner()
 
 # ───────────────────────────────────────────────
 # CONFIG
@@ -206,50 +210,40 @@ def generate_join_code() -> str:
 # CODE EXECUTION ENGINE (Python real, C++/JS mock)
 # ───────────────────────────────────────────────
 
-async def execute_single(code: str, language: str, test_input: str, expected: str, time_limit: int = 5) -> dict:
-    if language == "python":
-        try:
-            t0 = time.time()
-            proc = subprocess.run(
-                [sys.executable, "-c", code],
-                input=test_input,
-                capture_output=True,
-                text=True,
-                timeout=time_limit
-            )
-            elapsed = round(time.time() - t0, 3)
-            actual = proc.stdout.strip()
-            if proc.returncode != 0:
-                return {"verdict": "Runtime Error", "output": proc.stderr[:500], "time": elapsed, "passed": False}
-            if actual == expected.strip():
-                return {"verdict": "Accepted", "output": actual, "time": elapsed, "passed": True}
-            return {"verdict": "Wrong Answer", "output": actual, "expected": expected.strip(), "time": elapsed, "passed": False}
-        except subprocess.TimeoutExpired:
-            return {"verdict": "Time Limit Exceeded", "output": "", "time": time_limit, "passed": False}
-        except Exception as e:
-            return {"verdict": "Runtime Error", "output": str(e)[:200], "time": 0, "passed": False}
-    else:
-        # Mock execution for C++ and JavaScript
-        await asyncio.sleep(0.05)
-        return {"verdict": "Accepted", "output": expected.strip(), "time": 0.05, "passed": True, "note": f"Simulated ({language})"}
+async def execute_single(code: str, language: str, test_input: str, expected: str, time_limit: float = 2.0) -> dict:
+    """Wrapper for modular judge."""
+    result = await judge.execute(code, language, test_input, expected, time_limit)
+    return {
+        "verdict": result.verdict,
+        "output": result.output,
+        "time": result.time,
+        "passed": result.passed,
+        "expected": result.expected
+    }
 
-async def run_submission(code: str, language: str, test_cases: list, time_limit: int = 5) -> dict:
+async def run_submission(code: str, language: str, test_cases: list, time_limit: float = 2.0) -> dict:
     if not test_cases:
         return {"verdict": "Accepted", "test_results": [], "execution_time": 0.0}
 
     results = []
-    for tc in test_cases[:5]:  # Limit to 5 test cases
+    max_test_cases = 10 
+    for tc in test_cases[:max_test_cases]:
         r = await execute_single(code, language, tc.get("input", ""), tc.get("output", ""), time_limit)
         results.append(r)
-        if not r.get("passed") and r["verdict"] in ["Runtime Error", "Time Limit Exceeded", "Compilation Error"]:
-            break  # Stop early on fatal errors
+        if not r.get("passed"):
+            break
 
     passed_all = all(r.get("passed") for r in results)
-    verdict = "Accepted" if passed_all else next(
+    verdict = "Accepted" if (passed_all and len(results) >= min(len(test_cases), max_test_cases)) else next(
         (r["verdict"] for r in results if not r.get("passed")), "Wrong Answer"
     )
-    avg_time = sum(r.get("time", 0) for r in results) / max(len(results), 1)
-    return {"verdict": verdict, "test_results": results, "execution_time": round(avg_time, 3)}
+    
+    max_time = max((r.get("time", 0) for r in results), default=0.0)
+    return {
+        "verdict": verdict,
+        "test_results": results,
+        "execution_time": round(max_time, 3)
+    }
 
 # ───────────────────────────────────────────────
 # LEADERBOARD HELPER
@@ -476,30 +470,30 @@ async def get_hint(problem_id: str, body: HintRequest, current_user=Depends(get_
         return {"hint": fallback, "source": "static", "level": hint_level}
 
     try:
-        chat = LlmChat(
-            api_key=GEMINI_API_KEY,
-            session_id=f"hint-{uuid.uuid4()}",
-            system_message=(
-                "You are a competitive programming mentor. Give concise, educational hints (2-4 sentences) "
-                "that guide without revealing the complete solution. Be specific about algorithms/patterns."
-            )
-        ).with_model("gemini", "gemini-3-flash-preview")
-
-        level_instructions = {
-            1: "Give a very subtle conceptual hint about the general approach",
-            2: "Hint at the specific algorithm or data structure (e.g., 'think about hash maps' or 'try dynamic programming')",
-            3: "Give a more detailed algorithmic hint with pseudocode-level guidance (but not the complete solution)"
-        }
-
-        msg = UserMessage(text=(
-            f"Problem: {problem['title']}\n"
-            f"Description: {problem['description'][:600]}\n\n"
-            f"User code so far:\n```\n{body.code[:400] if body.code else '# No code yet'}\n```\n\n"
-            f"Task: {level_instructions.get(hint_level, level_instructions[1])}"
-        ))
-
-        response = await chat.send_message(msg)
-        return {"hint": response, "source": "ai", "level": hint_level}
+        # chat = LlmChat(
+        #     api_key=GEMINI_API_KEY,
+        #     session_id=f"hint-{uuid.uuid4()}",
+        #     system_message=(
+        #         "You are a competitive programming mentor. Give concise, educational hints (2-4 sentences) "
+        #         "that guide without revealing the complete solution. Be specific about algorithms/patterns."
+        #     )
+        # ).with_model("gemini", "gemini-3-flash-preview")
+        #
+        # level_instructions = {
+        #     1: "Give a very subtle conceptual hint about the general approach",
+        #     2: "Hint at the specific algorithm or data structure (e.g., 'think about hash maps' or 'try dynamic programming')",
+        #     3: "Give a more detailed algorithmic hint with pseudocode-level guidance (but not the complete solution)"
+        # }
+        #
+        # msg = UserMessage(text=(
+        #     f"Problem: {problem['title']}\n"
+        #     f"Description: {problem['description'][:600]}\n\n"
+        #     f"User code so far:\n```\n{body.code[:400] if body.code else '# No code yet'}\n```\n\n"
+        #     f"Task: {level_instructions.get(hint_level, level_instructions[1])}"
+        # ))
+        #
+        # response = await chat.send_message(msg)
+        raise Exception("AI hints disabled due to missing dependency")
     except Exception as e:
         logger.error(f"Gemini hint error: {e}")
         fallback = static_hints[-1] if static_hints else "Break the problem into smaller steps and think about which data structure fits best."
@@ -1491,30 +1485,31 @@ async def ai_code_review(body: CodeReviewRequest, current_user=Depends(get_curre
         }
     
     try:
-        chat = LlmChat(
-            api_key=GEMINI_API_KEY,
-            session_id=f"review-{uuid.uuid4()}",
-            system_message=(
-                "You are an expert code reviewer for competitive programming. "
-                "Analyze the submitted code and provide: "
-                "1. Overall quality assessment "
-                "2. Time and space complexity analysis "
-                "3. Specific suggestions for improvement "
-                "4. Edge cases to consider "
-                "Be concise but thorough. Format with markdown."
-            )
-        ).with_model("gemini", "gemini-3-flash-preview")
-        
-        msg = UserMessage(text=(
-            f"Problem: {problem['title']}\n\n"
-            f"Description: {problem['description'][:800]}\n\n"
-            f"User's Code ({submission['language']}):\n```{submission['language']}\n{submission['code'][:2000]}\n```\n\n"
-            f"Verdict: {submission['verdict']}\n"
-            f"Execution Time: {submission['execution_time']}s\n\n"
-            "Please review this code and provide feedback."
-        ))
-        
-        response = await chat.send_message(msg)
+        # chat = LlmChat(
+        #     api_key=GEMINI_API_KEY,
+        #     session_id=f"review-{uuid.uuid4()}",
+        #     system_message=(
+        #         "You are an expert code reviewer for competitive programming. "
+        #         "Analyze the submitted code and provide: "
+        #         "1. Overall quality assessment "
+        #         "2. Time and space complexity analysis "
+        #         "3. Specific suggestions for improvement "
+        #         "4. Edge cases to consider "
+        #         "Be concise but thorough. Format with markdown."
+        #     )
+        # ).with_model("gemini", "gemini-3-flash-preview")
+        # 
+        # msg = UserMessage(text=(
+        #     f"Problem: {problem['title']}\n\n"
+        #     f"Description: {problem['description'][:800]}\n\n"
+        #     f"User's Code ({submission['language']}):\n```{submission['language']}\n{submission['code'][:2000]}\n```\n\n"
+        #     f"Verdict: {submission['verdict']}\n"
+        #     f"Execution Time: {submission['execution_time']}s\n\n"
+        #     "Please review this code and provide feedback."
+        # ))
+        # 
+        # response = await chat.send_message(msg)
+        raise Exception("AI review disabled due to missing dependency")
         
         return {
             "review": response,
