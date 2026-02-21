@@ -21,7 +21,7 @@ export default function DailyChallengePage() {
   const loadData = async () => {
     try {
       const [challengeRes] = await Promise.all([
-        api.get("/daily"),
+        api.get("/daily-challenge"),
       ]);
       setChallenge(challengeRes.data);
       if (user) {
