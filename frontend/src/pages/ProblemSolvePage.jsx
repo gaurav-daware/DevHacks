@@ -448,6 +448,10 @@ export default function ProblemSolvePage() {
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="discussions" className="flex-1 overflow-y-auto p-4 mt-0">
+              <DiscussionsTab problemId={problemId} />
+            </TabsContent>
           </Tabs>
         </div>
 
