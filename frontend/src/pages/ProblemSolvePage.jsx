@@ -323,6 +323,11 @@ export default function ProblemSolvePage() {
                 <Clock className="w-3.5 h-3.5" />
                 Time limit: {problem.time_limit}s
               </div>
+
+              {/* Similar Problems */}
+              <div className="mt-6">
+                <SimilarProblems problemId={problemId} />
+              </div>
             </TabsContent>
 
             <TabsContent value="hints" className="flex-1 overflow-y-auto p-4 mt-0">
