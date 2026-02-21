@@ -23,6 +23,7 @@ import sys
 import asyncio
 import time
 from pathlib import Path
+from additional_problems import ADDITIONAL_PROBLEMS
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
