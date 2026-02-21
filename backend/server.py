@@ -1012,6 +1012,773 @@ Output: False
         logger.info(f"Seeded {len(problems)} sample problems")
 
 # ───────────────────────────────────────────────
+# DAILY CHALLENGE ROUTES
+# ───────────────────────────────────────────────
+
+@api_router.get("/daily-challenge")
+async def get_daily_challenge(current_user=Depends(get_optional_user)):
+    """Get today's daily challenge problem"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    # Check if we have a daily challenge set for today
+    daily = await db.daily_challenges.find_one({"date": today}, {"_id": 0})
+    
+    if not daily:
+        # Auto-select a random problem as daily challenge
+        problems = await db.problems.find({}, {"_id": 0}).to_list(100)
+        if not problems:
+            raise HTTPException(status_code=404, detail="No problems available")
+        
+        selected = random.choice(problems)
+        daily = {
+            "id": str(uuid.uuid4()),
+            "date": today,
+            "problem_id": selected["id"],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.daily_challenges.insert_one(daily)
+    
+    # Fetch the problem
+    problem = await db.problems.find_one({"id": daily["problem_id"]}, {"_id": 0, "test_cases": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Daily challenge problem not found")
+    
+    is_completed = False
+    if current_user:
+        is_completed = daily["problem_id"] in current_user.get("solved_problems", [])
+    
+    return {
+        "date": today,
+        "problem": problem,
+        "is_completed": is_completed
+    }
+
+@api_router.get("/daily-challenge/streak")
+async def get_daily_streak(current_user=Depends(get_current_user)):
+    """Get user's daily challenge streak"""
+    # Get last 365 days of submissions
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    
+    submissions = await db.submissions.find(
+        {"user_id": current_user["id"], "created_at": {"$gte": cutoff}, "verdict": "Accepted"},
+        {"_id": 0, "created_at": 1}
+    ).to_list(10000)
+    
+    # Create activity map (date -> count)
+    activity = {}
+    for sub in submissions:
+        date = sub["created_at"][:10]  # YYYY-MM-DD
+        activity[date] = activity.get(date, 0) + 1
+    
+    # Calculate current streak
+    streak = 0
+    today = datetime.now(timezone.utc).date()
+    check_date = today
+    
+    while True:
+        date_str = check_date.strftime("%Y-%m-%d")
+        if date_str in activity:
+            streak += 1
+            check_date -= timedelta(days=1)
+        else:
+            break
+    
+    return {
+        "current_streak": streak,
+        "activity": activity,
+        "total_submissions": len(submissions)
+    }
+
+# ───────────────────────────────────────────────
+# DISCUSSION ROUTES
+# ───────────────────────────────────────────────
+
+class DiscussionCreate(BaseModel):
+    content: str
+    parent_id: Optional[str] = None
+
+@api_router.get("/problems/{problem_id}/discussions")
+async def get_discussions(problem_id: str, current_user=Depends(get_optional_user)):
+    """Get discussions for a problem"""
+    discussions = await db.discussions.find(
+        {"problem_id": problem_id, "parent_id": None},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Get replies for each discussion
+    for disc in discussions:
+        replies = await db.discussions.find(
+            {"parent_id": disc["id"]},
+            {"_id": 0}
+        ).sort("created_at", 1).to_list(50)
+        disc["replies"] = replies
+        disc["reply_count"] = len(replies)
+        
+        # Check if current user has voted
+        if current_user:
+            vote = await db.discussion_votes.find_one({
+                "discussion_id": disc["id"],
+                "user_id": current_user["id"]
+            })
+            disc["user_vote"] = vote["vote_type"] if vote else None
+    
+    return discussions
+
+@api_router.post("/problems/{problem_id}/discussions")
+async def create_discussion(problem_id: str, body: DiscussionCreate, current_user=Depends(get_current_user)):
+    """Create a discussion or reply"""
+    # Verify problem exists
+    problem = await db.problems.find_one({"id": problem_id})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    if len(body.content.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Content too short")
+    
+    disc_id = str(uuid.uuid4())
+    doc = {
+        "id": disc_id,
+        "problem_id": problem_id,
+        "user_id": current_user["id"],
+        "username": current_user["username"],
+        "content": body.content.strip(),
+        "parent_id": body.parent_id,
+        "upvotes": 0,
+        "downvotes": 0,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.discussions.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.post("/discussions/{discussion_id}/vote")
+async def vote_discussion(discussion_id: str, vote_type: str, current_user=Depends(get_current_user)):
+    """Vote on a discussion (upvote/downvote)"""
+    if vote_type not in ["up", "down"]:
+        raise HTTPException(status_code=400, detail="Invalid vote type")
+    
+    discussion = await db.discussions.find_one({"id": discussion_id})
+    if not discussion:
+        raise HTTPException(status_code=404, detail="Discussion not found")
+    
+    # Check existing vote
+    existing = await db.discussion_votes.find_one({
+        "discussion_id": discussion_id,
+        "user_id": current_user["id"]
+    })
+    
+    if existing:
+        if existing["vote_type"] == vote_type:
+            # Remove vote
+            await db.discussion_votes.delete_one({"_id": existing["_id"]})
+            inc_field = "upvotes" if vote_type == "up" else "downvotes"
+            await db.discussions.update_one({"id": discussion_id}, {"$inc": {inc_field: -1}})
+            return {"message": "Vote removed"}
+        else:
+            # Change vote
+            await db.discussion_votes.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"vote_type": vote_type}}
+            )
+            if vote_type == "up":
+                await db.discussions.update_one({"id": discussion_id}, {"$inc": {"upvotes": 1, "downvotes": -1}})
+            else:
+                await db.discussions.update_one({"id": discussion_id}, {"$inc": {"upvotes": -1, "downvotes": 1}})
+            return {"message": "Vote changed"}
+    else:
+        # New vote
+        await db.discussion_votes.insert_one({
+            "discussion_id": discussion_id,
+            "user_id": current_user["id"],
+            "vote_type": vote_type,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        inc_field = "upvotes" if vote_type == "up" else "downvotes"
+        await db.discussions.update_one({"id": discussion_id}, {"$inc": {inc_field: 1}})
+        return {"message": "Voted"}
+
+# ───────────────────────────────────────────────
+# PROBLEM RATING ROUTES
+# ───────────────────────────────────────────────
+
+@api_router.post("/problems/{problem_id}/rate")
+async def rate_problem(problem_id: str, rating: int, current_user=Depends(get_current_user)):
+    """Rate a problem (1-5 stars)"""
+    if rating < 1 or rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be 1-5")
+    
+    problem = await db.problems.find_one({"id": problem_id})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    # Upsert rating
+    await db.problem_ratings.update_one(
+        {"problem_id": problem_id, "user_id": current_user["id"]},
+        {"$set": {"rating": rating, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    
+    # Calculate average rating
+    ratings = await db.problem_ratings.find({"problem_id": problem_id}).to_list(10000)
+    avg = sum(r["rating"] for r in ratings) / len(ratings) if ratings else 0
+    
+    await db.problems.update_one(
+        {"id": problem_id},
+        {"$set": {"average_rating": round(avg, 2), "rating_count": len(ratings)}}
+    )
+    
+    return {"average_rating": round(avg, 2), "rating_count": len(ratings)}
+
+# ───────────────────────────────────────────────
+# GLOBAL LEADERBOARD ROUTES
+# ───────────────────────────────────────────────
+
+@api_router.get("/leaderboard/global")
+async def get_global_leaderboard(limit: int = 50, current_user=Depends(get_optional_user)):
+    """Get global user rankings"""
+    users = await db.users.find(
+        {},
+        {"_id": 0, "password_hash": 0}
+    ).to_list(1000)
+    
+    # Calculate scores
+    rankings = []
+    for user in users:
+        solved = len(user.get("solved_problems", []))
+        # Get submission stats
+        total_subs = await db.submissions.count_documents({"user_id": user["id"]})
+        accepted_subs = await db.submissions.count_documents({"user_id": user["id"], "verdict": "Accepted"})
+        
+        rankings.append({
+            "user_id": user["id"],
+            "username": user["username"],
+            "solved_count": solved,
+            "total_submissions": total_subs,
+            "accepted_submissions": accepted_subs,
+            "accuracy": round((accepted_subs / total_subs * 100) if total_subs > 0 else 0, 1),
+            "score": solved * 100 + accepted_subs * 10
+        })
+    
+    # Sort by score descending
+    rankings.sort(key=lambda x: (-x["score"], -x["solved_count"], x["username"]))
+    
+    # Add ranks
+    for i, r in enumerate(rankings):
+        r["rank"] = i + 1
+        if current_user and r["user_id"] == current_user["id"]:
+            r["is_current_user"] = True
+    
+    return rankings[:limit]
+
+# ───────────────────────────────────────────────
+# ROADMAP / TOPIC ROUTES
+# ───────────────────────────────────────────────
+
+TOPIC_ROADMAP = [
+    {"id": "arrays", "name": "Arrays & Hashing", "order": 1, "tags": ["array", "hash-table", "hashing"]},
+    {"id": "two-pointers", "name": "Two Pointers", "order": 2, "tags": ["two-pointers", "pointers"]},
+    {"id": "sliding-window", "name": "Sliding Window", "order": 3, "tags": ["sliding-window", "window"]},
+    {"id": "stack", "name": "Stack", "order": 4, "tags": ["stack"]},
+    {"id": "binary-search", "name": "Binary Search", "order": 5, "tags": ["binary-search", "search"]},
+    {"id": "linked-list", "name": "Linked List", "order": 6, "tags": ["linked-list"]},
+    {"id": "trees", "name": "Trees", "order": 7, "tags": ["tree", "binary-tree", "bst"]},
+    {"id": "tries", "name": "Tries", "order": 8, "tags": ["trie"]},
+    {"id": "heap", "name": "Heap / Priority Queue", "order": 9, "tags": ["heap", "priority-queue"]},
+    {"id": "backtracking", "name": "Backtracking", "order": 10, "tags": ["backtracking", "recursion"]},
+    {"id": "graphs", "name": "Graphs", "order": 11, "tags": ["graph", "dfs", "bfs"]},
+    {"id": "dp", "name": "Dynamic Programming", "order": 12, "tags": ["dynamic-programming", "dp"]},
+    {"id": "greedy", "name": "Greedy", "order": 13, "tags": ["greedy"]},
+    {"id": "math", "name": "Math & Geometry", "order": 14, "tags": ["math", "geometry"]},
+    {"id": "bit-manipulation", "name": "Bit Manipulation", "order": 15, "tags": ["bit-manipulation", "bits"]}
+]
+
+@api_router.get("/roadmap")
+async def get_roadmap(current_user=Depends(get_optional_user)):
+    """Get topic-wise learning roadmap with problem counts"""
+    result = []
+    solved_set = set(current_user.get("solved_problems", [])) if current_user else set()
+    
+    for topic in TOPIC_ROADMAP:
+        # Find problems with matching tags
+        query = {"tags": {"$in": topic["tags"]}}
+        problems = await db.problems.find(query, {"_id": 0, "id": 1, "title": 1, "difficulty": 1}).to_list(100)
+        
+        solved_count = sum(1 for p in problems if p["id"] in solved_set)
+        
+        result.append({
+            "id": topic["id"],
+            "name": topic["name"],
+            "order": topic["order"],
+            "tags": topic["tags"],
+            "problem_count": len(problems),
+            "solved_count": solved_count,
+            "progress": round((solved_count / len(problems) * 100) if problems else 0, 1),
+            "problems": problems
+        })
+    
+    return result
+
+@api_router.get("/problems/{problem_id}/similar")
+async def get_similar_problems(problem_id: str, limit: int = 5, current_user=Depends(get_optional_user)):
+    """Get similar problems based on tags"""
+    problem = await db.problems.find_one({"id": problem_id}, {"_id": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    tags = problem.get("tags", [])
+    if not tags:
+        return []
+    
+    # Find problems with similar tags
+    similar = await db.problems.find(
+        {"id": {"$ne": problem_id}, "tags": {"$in": tags}},
+        {"_id": 0, "test_cases": 0, "hints": 0}
+    ).to_list(50)
+    
+    # Score by tag overlap
+    for p in similar:
+        p["similarity_score"] = len(set(p.get("tags", [])) & set(tags))
+    
+    similar.sort(key=lambda x: -x["similarity_score"])
+    
+    # Mark solved
+    if current_user:
+        solved_set = set(current_user.get("solved_problems", []))
+        for p in similar:
+            p["is_solved"] = p["id"] in solved_set
+    
+    return similar[:limit]
+
+# ───────────────────────────────────────────────
+# INTERVIEW KITS ROUTES
+# ───────────────────────────────────────────────
+
+INTERVIEW_KITS = [
+    {
+        "id": "google",
+        "company": "Google",
+        "description": "Top problems frequently asked in Google interviews",
+        "difficulty_distribution": {"easy": 2, "medium": 5, "hard": 3},
+        "tags": ["array", "dynamic-programming", "graph", "string", "tree"]
+    },
+    {
+        "id": "meta",
+        "company": "Meta (Facebook)",
+        "description": "Problems commonly seen in Meta technical interviews",
+        "difficulty_distribution": {"easy": 3, "medium": 4, "hard": 3},
+        "tags": ["array", "string", "hash-table", "binary-search", "tree"]
+    },
+    {
+        "id": "amazon",
+        "company": "Amazon",
+        "description": "Amazon's Leadership Principles focused technical questions",
+        "difficulty_distribution": {"easy": 2, "medium": 6, "hard": 2},
+        "tags": ["array", "tree", "dynamic-programming", "hash-table", "design"]
+    },
+    {
+        "id": "microsoft",
+        "company": "Microsoft",
+        "description": "Microsoft interview preparation problems",
+        "difficulty_distribution": {"easy": 3, "medium": 5, "hard": 2},
+        "tags": ["array", "string", "linked-list", "tree", "graph"]
+    },
+    {
+        "id": "apple",
+        "company": "Apple",
+        "description": "Apple technical interview preparation",
+        "difficulty_distribution": {"easy": 2, "medium": 5, "hard": 3},
+        "tags": ["array", "string", "tree", "design", "math"]
+    }
+]
+
+@api_router.get("/interview-kits")
+async def get_interview_kits(current_user=Depends(get_optional_user)):
+    """Get list of company interview kits"""
+    result = []
+    solved_set = set(current_user.get("solved_problems", [])) if current_user else set()
+    
+    for kit in INTERVIEW_KITS:
+        # Get problems matching the kit's tags
+        problems = await db.problems.find(
+            {"tags": {"$in": kit["tags"]}},
+            {"_id": 0, "id": 1, "title": 1, "difficulty": 1, "tags": 1}
+        ).to_list(20)
+        
+        solved_count = sum(1 for p in problems if p["id"] in solved_set)
+        
+        result.append({
+            **kit,
+            "problem_count": len(problems),
+            "solved_count": solved_count,
+            "progress": round((solved_count / len(problems) * 100) if problems else 0, 1)
+        })
+    
+    return result
+
+@api_router.get("/interview-kits/{kit_id}")
+async def get_interview_kit_detail(kit_id: str, current_user=Depends(get_optional_user)):
+    """Get detailed interview kit with problems"""
+    kit = next((k for k in INTERVIEW_KITS if k["id"] == kit_id), None)
+    if not kit:
+        raise HTTPException(status_code=404, detail="Interview kit not found")
+    
+    problems = await db.problems.find(
+        {"tags": {"$in": kit["tags"]}},
+        {"_id": 0, "test_cases": 0, "hints": 0}
+    ).to_list(30)
+    
+    solved_set = set(current_user.get("solved_problems", [])) if current_user else set()
+    
+    for p in problems:
+        p["is_solved"] = p["id"] in solved_set
+    
+    return {
+        **kit,
+        "problems": problems,
+        "solved_count": sum(1 for p in problems if p["is_solved"]),
+        "problem_count": len(problems)
+    }
+
+# ───────────────────────────────────────────────
+# AI CODE REVIEW ROUTES
+# ───────────────────────────────────────────────
+
+class CodeReviewRequest(BaseModel):
+    submission_id: str
+
+@api_router.post("/ai/code-review")
+async def ai_code_review(body: CodeReviewRequest, current_user=Depends(get_current_user)):
+    """Get AI-powered code review for a submission"""
+    submission = await db.submissions.find_one(
+        {"id": body.submission_id, "user_id": current_user["id"]},
+        {"_id": 0}
+    )
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    problem = await db.problems.find_one({"id": submission["problem_id"]}, {"_id": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    if not GEMINI_API_KEY:
+        return {
+            "review": "AI code review is not available. Please configure the Gemini API key.",
+            "suggestions": [],
+            "complexity_analysis": "N/A",
+            "source": "fallback"
+        }
+    
+    try:
+        chat = LlmChat(
+            api_key=GEMINI_API_KEY,
+            session_id=f"review-{uuid.uuid4()}",
+            system_message=(
+                "You are an expert code reviewer for competitive programming. "
+                "Analyze the submitted code and provide: "
+                "1. Overall quality assessment "
+                "2. Time and space complexity analysis "
+                "3. Specific suggestions for improvement "
+                "4. Edge cases to consider "
+                "Be concise but thorough. Format with markdown."
+            )
+        ).with_model("gemini", "gemini-3-flash-preview")
+        
+        msg = UserMessage(text=(
+            f"Problem: {problem['title']}\n\n"
+            f"Description: {problem['description'][:800]}\n\n"
+            f"User's Code ({submission['language']}):\n```{submission['language']}\n{submission['code'][:2000]}\n```\n\n"
+            f"Verdict: {submission['verdict']}\n"
+            f"Execution Time: {submission['execution_time']}s\n\n"
+            "Please review this code and provide feedback."
+        ))
+        
+        response = await chat.send_message(msg)
+        
+        return {
+            "review": response,
+            "source": "ai",
+            "submission_id": body.submission_id
+        }
+    except Exception as e:
+        logger.error(f"AI code review error: {e}")
+        return {
+            "review": "Unable to generate AI review at this time. Please try again later.",
+            "suggestions": [],
+            "source": "error"
+        }
+
+# ───────────────────────────────────────────────
+# BATTLE MODE ROUTES
+# ───────────────────────────────────────────────
+
+class BattleCreate(BaseModel):
+    difficulty: Optional[str] = None
+
+class BattleJoin(BaseModel):
+    battle_id: str
+
+@api_router.post("/battles/create")
+async def create_battle(body: BattleCreate, current_user=Depends(get_current_user)):
+    """Create a new 1v1 battle room"""
+    battle_id = str(uuid.uuid4())
+    join_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    
+    # Select a random problem
+    query = {}
+    if body.difficulty:
+        query["difficulty"] = body.difficulty
+    
+    problems = await db.problems.find(query, {"_id": 0, "id": 1}).to_list(100)
+    if not problems:
+        raise HTTPException(status_code=400, detail="No problems available")
+    
+    selected = random.choice(problems)
+    
+    battle = {
+        "id": battle_id,
+        "join_code": join_code,
+        "problem_id": selected["id"],
+        "difficulty": body.difficulty,
+        "player1_id": current_user["id"],
+        "player1_username": current_user["username"],
+        "player2_id": None,
+        "player2_username": None,
+        "player1_solved": False,
+        "player2_solved": False,
+        "winner_id": None,
+        "status": "waiting",  # waiting, active, finished
+        "started_at": None,
+        "finished_at": None,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.battles.insert_one(battle)
+    battle.pop("_id", None)
+    return battle
+
+@api_router.post("/battles/join")
+async def join_battle(body: BattleJoin, current_user=Depends(get_current_user)):
+    """Join an existing battle"""
+    battle = await db.battles.find_one({"join_code": body.battle_id.upper()}, {"_id": 0})
+    if not battle:
+        battle = await db.battles.find_one({"id": body.battle_id}, {"_id": 0})
+    
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+    
+    if battle["status"] != "waiting":
+        raise HTTPException(status_code=400, detail="Battle already started or finished")
+    
+    if battle["player1_id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot join your own battle")
+    
+    await db.battles.update_one(
+        {"id": battle["id"]},
+        {
+            "$set": {
+                "player2_id": current_user["id"],
+                "player2_username": current_user["username"],
+                "status": "active",
+                "started_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+    )
+    
+    updated = await db.battles.find_one({"id": battle["id"]}, {"_id": 0})
+    return updated
+
+@api_router.get("/battles/{battle_id}")
+async def get_battle(battle_id: str, current_user=Depends(get_current_user)):
+    """Get battle details"""
+    battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+    
+    # Get problem details
+    problem = await db.problems.find_one({"id": battle["problem_id"]}, {"_id": 0, "test_cases": 0})
+    battle["problem"] = problem
+    
+    return battle
+
+@api_router.post("/battles/{battle_id}/submit")
+async def submit_battle_solution(battle_id: str, body: SubmitCodeRequest, current_user=Depends(get_current_user)):
+    """Submit solution for a battle"""
+    battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+    
+    if battle["status"] != "active":
+        raise HTTPException(status_code=400, detail="Battle is not active")
+    
+    if current_user["id"] not in [battle["player1_id"], battle["player2_id"]]:
+        raise HTTPException(status_code=403, detail="You are not a participant in this battle")
+    
+    # Get problem and run tests
+    problem = await db.problems.find_one({"id": battle["problem_id"]}, {"_id": 0})
+    test_cases = problem.get("test_cases", [])
+    
+    exec_result = await run_submission(body.code, body.language, test_cases, problem.get("time_limit", 5))
+    
+    is_player1 = current_user["id"] == battle["player1_id"]
+    update_field = "player1_solved" if is_player1 else "player2_solved"
+    
+    if exec_result["verdict"] == "Accepted":
+        update_data = {update_field: True}
+        
+        # Check if this player won
+        other_solved = battle["player2_solved"] if is_player1 else battle["player1_solved"]
+        if not other_solved:
+            update_data["winner_id"] = current_user["id"]
+            update_data["status"] = "finished"
+            update_data["finished_at"] = datetime.now(timezone.utc).isoformat()
+        
+        await db.battles.update_one({"id": battle_id}, {"$set": update_data})
+    
+    # Save submission
+    sub_id = str(uuid.uuid4())
+    sub_doc = {
+        "id": sub_id,
+        "user_id": current_user["id"],
+        "username": current_user["username"],
+        "problem_id": battle["problem_id"],
+        "battle_id": battle_id,
+        "language": body.language,
+        "code": body.code,
+        "verdict": exec_result["verdict"],
+        "execution_time": exec_result["execution_time"],
+        "test_results": exec_result["test_results"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.submissions.insert_one(sub_doc)
+    sub_doc.pop("_id", None)
+    
+    # Broadcast update via WebSocket
+    await manager.broadcast(f"battle_{battle_id}", {
+        "type": "battle_update",
+        "player_id": current_user["id"],
+        "verdict": exec_result["verdict"],
+        "solved": exec_result["verdict"] == "Accepted"
+    })
+    
+    updated_battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
+    
+    return {
+        "submission": sub_doc,
+        "battle": updated_battle
+    }
+
+@api_router.get("/battles/active/list")
+async def list_active_battles(current_user=Depends(get_current_user)):
+    """List user's active and recent battles"""
+    battles = await db.battles.find(
+        {
+            "$or": [
+                {"player1_id": current_user["id"]},
+                {"player2_id": current_user["id"]}
+            ]
+        },
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(20)
+    
+    return battles
+
+# WebSocket for battle
+@api_router.websocket("/ws/battle/{battle_id}")
+async def ws_battle(websocket: WebSocket, battle_id: str):
+    await manager.connect(websocket, f"battle_{battle_id}")
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, f"battle_{battle_id}")
+    except Exception as e:
+        logger.error(f"Battle WS error: {e}")
+        manager.disconnect(websocket, f"battle_{battle_id}")
+
+# ───────────────────────────────────────────────
+# SOLUTION COMPARISON ROUTES
+# ───────────────────────────────────────────────
+
+@api_router.get("/problems/{problem_id}/solutions")
+async def get_problem_solutions(problem_id: str, current_user=Depends(get_optional_user)):
+    """Get accepted solutions for a problem (for comparison)"""
+    # Only show solutions if user has solved it or is admin
+    if current_user:
+        has_solved = problem_id in current_user.get("solved_problems", [])
+        is_admin = current_user.get("role") == "admin"
+        
+        if not has_solved and not is_admin:
+            raise HTTPException(status_code=403, detail="Solve the problem first to view solutions")
+    else:
+        raise HTTPException(status_code=401, detail="Login required")
+    
+    solutions = await db.submissions.find(
+        {"problem_id": problem_id, "verdict": "Accepted"},
+        {"_id": 0, "keystrokes": 0, "test_results": 0}
+    ).sort("execution_time", 1).to_list(20)
+    
+    # Group by user (one solution per user)
+    seen_users = set()
+    unique_solutions = []
+    for sol in solutions:
+        if sol["user_id"] not in seen_users:
+            seen_users.add(sol["user_id"])
+            unique_solutions.append(sol)
+    
+    return unique_solutions[:10]
+
+# ───────────────────────────────────────────────
+# USER ACTIVITY HEATMAP
+# ───────────────────────────────────────────────
+
+@api_router.get("/users/activity-heatmap")
+async def get_activity_heatmap(current_user=Depends(get_current_user)):
+    """Get user activity heatmap data for past year"""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    
+    submissions = await db.submissions.find(
+        {"user_id": current_user["id"], "created_at": {"$gte": cutoff}},
+        {"_id": 0, "created_at": 1, "verdict": 1}
+    ).to_list(10000)
+    
+    # Group by date
+    activity = {}
+    for sub in submissions:
+        date = sub["created_at"][:10]
+        if date not in activity:
+            activity[date] = {"total": 0, "accepted": 0}
+        activity[date]["total"] += 1
+        if sub["verdict"] == "Accepted":
+            activity[date]["accepted"] += 1
+    
+    # Calculate streak
+    streak = 0
+    max_streak = 0
+    today = datetime.now(timezone.utc).date()
+    check_date = today
+    
+    while True:
+        date_str = check_date.strftime("%Y-%m-%d")
+        if date_str in activity:
+            streak += 1
+            max_streak = max(max_streak, streak)
+            check_date -= timedelta(days=1)
+        else:
+            break
+    
+    return {
+        "activity": activity,
+        "current_streak": streak,
+        "max_streak": max_streak,
+        "total_active_days": len(activity),
+        "total_submissions": sum(d["total"] for d in activity.values()),
+        "total_accepted": sum(d["accepted"] for d in activity.values())
+    }
+
+# ───────────────────────────────────────────────
 # APP LIFECYCLE
 # ───────────────────────────────────────────────
 
