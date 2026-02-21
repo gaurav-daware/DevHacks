@@ -114,6 +114,11 @@ export default function ProfilePage() {
         ))}
       </div>
 
+      {/* Activity Heatmap */}
+      <div className="mb-6">
+        <ActivityHeatmap />
+      </div>
+
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent submissions */}
