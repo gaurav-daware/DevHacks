@@ -1,53 +1,114 @@
-import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "sonner";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import Navbar from "@/components/Navbar";
+import LandingPage from "@/pages/LandingPage";
+import AuthPage from "@/pages/AuthPage";
+import ProblemsPage from "@/pages/ProblemsPage";
+import ProblemSolvePage from "@/pages/ProblemSolvePage";
+import ContestListPage from "@/pages/ContestListPage";
+import ContestArenaPage from "@/pages/ContestArenaPage";
+import AdminDashboard from "@/pages/AdminDashboard";
+import ProfilePage from "@/pages/ProfilePage";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Protected route wrapper
+function ProtectedRoute({ children, adminOnly = false }) {
+  const { user, loading } = useAuth();
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-muted-foreground text-sm font-mono">Initializing...</p>
+        </div>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+  if (!user) return <Navigate to="/auth" replace />;
+  if (adminOnly && user.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
 
+function AppLayout({ children }) {
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <div className="min-h-screen bg-[#050505]">
+      <Navbar />
+      <main>{children}</main>
     </div>
   );
-};
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<AppLayout><LandingPage /></AppLayout>} />
+      <Route path="/auth" element={<AuthPage />} />
+      <Route
+        path="/problems"
+        element={<AppLayout><ProblemsPage /></AppLayout>}
+      />
+      <Route
+        path="/problems/:problemId"
+        element={
+          <ProtectedRoute>
+            <AppLayout><ProblemSolvePage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/contests"
+        element={<AppLayout><ContestListPage /></AppLayout>}
+      />
+      <Route
+        path="/contests/:contestId"
+        element={
+          <ProtectedRoute>
+            <AppLayout><ContestArenaPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <AppLayout><ProfilePage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute adminOnly>
+            <AppLayout><AdminDashboard /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+        <Toaster
+          theme="dark"
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: '#121215',
+              border: '1px solid #27272a',
+              color: '#fafafa',
+            }
+          }}
+        />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
