@@ -88,6 +88,8 @@ export default function ProblemSolvePage() {
   const [hintOpen, setHintOpen] = useState(false);
   const [playbackSub, setPlaybackSub] = useState(null);
   const [playbackOpen, setPlaybackOpen] = useState(false);
+  const [showCodeReview, setShowCodeReview] = useState(false);
+  const [selectedSubForReview, setSelectedSubForReview] = useState(null);
 
   // Keystroke recording
   const keystrokesRef = useRef([]);
