@@ -1,0 +1,229 @@
+// prisma/schema.prisma
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── NextAuth Models ───────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.String
+  access_token      String? @db.String
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.String
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Core Models ───────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String?
+  email         String?  @unique
+  emailVerified DateTime?
+  image         String?
+  rating        Int      @default(1200)
+  xp            Int      @default(0)
+  streak        Int      @default(0)
+  lastActive    DateTime @default(now())
+
+  // Stats embedded
+  wins          Int      @default(0)
+  losses        Int      @default(0)
+  totalSolved   Int      @default(0)
+
+  // Skills stored as JSON array
+  skills        Json     @default("[]")
+  // Format: [{ name: "Arrays", level: 3, unlocked: true, solvedCount: 3 }]
+
+  solvedProblems String[] @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  accounts    Account[]
+  sessions    Session[]
+  submissions Submission[]
+  duelsAsP1   Duel[]       @relation("DuelPlayer1")
+  duelsAsP2   Duel[]       @relation("DuelPlayer2")
+  wonDuels    Duel[]       @relation("DuelWinner")
+  pairSessionsAsHost    PairSession[] @relation("PairHost")
+  pairSessionsAsPartner PairSession[] @relation("PairPartner")
+}
+
+model Problem {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  slug        String   @unique
+  difficulty  String   // Easy | Medium | Hard
+  tags        String[]
+  description String   @db.String
+  constraints String[]
+  hints       String[]
+  examples    Json     // Array of { input, output, explanation }
+  starterCode Json     // { python: "...", cpp: "...", java: "...", javascript: "..." }
+  testCases   Json     // Array of { input, output, isSample }
+  timeLimit   Int      @default(2000) // ms
+  memoryLimit Int      @default(256)  // MB
+  acceptance  Float    @default(0)
+  totalSubmissions Int @default(0)
+  acceptedSubmissions Int @default(0)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  submissions Submission[]
+  duels       Duel[]
+}
+
+model Submission {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  problemId String   @db.ObjectId
+  duelId    String?  @db.ObjectId
+
+  code      String   @db.String
+  language  String   // python | cpp | java | javascript
+  status    String   // Accepted | Wrong Answer | TLE | MLE | Runtime Error | Compilation Error
+  runtime   String?
+  memory    String?
+  errorOutput String? @db.String
+  testsPassed Int    @default(0)
+  totalTests  Int    @default(0)
+
+  submittedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  problem Problem @relation(fields: [problemId], references: [id])
+}
+
+model Duel {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  problemId String   @db.ObjectId
+  player1Id String   @db.ObjectId
+  player2Id String   @db.ObjectId
+  winnerId  String?  @db.ObjectId
+
+  status    DuelStatus @default(WAITING)
+
+  // Player progress stored as JSON
+  player1State Json @default("{\"code\":\"\",\"language\":\"python\",\"testsPassed\":0,\"totalTests\":0,\"progress\":0,\"status\":\"CODING\"}")
+  player2State Json @default("{\"code\":\"\",\"language\":\"python\",\"testsPassed\":0,\"totalTests\":0,\"progress\":0,\"status\":\"CODING\"}")
+
+  // ELO changes
+  player1EloDelta Int @default(0)
+  player2EloDelta Int @default(0)
+
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+
+  problem Problem @relation(fields: [problemId], references: [id])
+  player1 User    @relation("DuelPlayer1", fields: [player1Id], references: [id])
+  player2 User    @relation("DuelPlayer2", fields: [player2Id], references: [id])
+  winner  User?   @relation("DuelWinner", fields: [winnerId], references: [id])
+}
+
+enum DuelStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+  CANCELLED
+}
+
+model PairSession {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  problemId String   @db.ObjectId
+  hostId    String   @db.ObjectId
+  partnerId String?  @db.ObjectId
+  status    PairSessionStatus @default(WAITING)
+
+  // Shared code state
+  sharedCode     String @default("") @db.String
+  sharedLanguage String @default("python")
+
+  // AI analysis result
+  aiAnalysis Json?
+
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+
+  host    User  @relation("PairHost", fields: [hostId], references: [id])
+  partner User? @relation("PairPartner", fields: [partnerId], references: [id])
+}
+
+enum PairSessionStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+}
+
+model Contest {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String
+  startTime   DateTime
+  endTime     DateTime
+  problemIds  String[] @db.ObjectId
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  standings ContestStanding[]
+}
+
+model ContestStanding {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  contestId String @db.ObjectId
+  userId    String @db.ObjectId
+  score     Int    @default(0)
+  penalty   Int    @default(0)  // Total time in seconds
+  solvedAt  Json   @default("{}")  // { problemId: timestamp }
+
+  contest Contest @relation(fields: [contestId], references: [id])
+
+  @@unique([contestId, userId])
+}
+
+// Matchmaking queue (ephemeral, but stored for reliability)
+model MatchmakingQueue {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique @db.ObjectId
+  rating    Int
+  joinedAt  DateTime @default(now())
+}
