@@ -12,6 +12,7 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import ProfilePage from "@/pages/ProfilePage";
 import DailyChallengePage from "@/pages/DailyChallengePage";
 import RoadmapPage from "@/pages/RoadmapPage";
+import AiRoadmapPage from "@/pages/AiRoadmapPage";
 import GlobalLeaderboardPage from "@/pages/GlobalLeaderboardPage";
 import InterviewKitsPage from "@/pages/InterviewKitsPage";
 import BattleModePage from "@/pages/BattleModePage";
@@ -98,6 +99,10 @@ function AppRoutes() {
       <Route
         path="/roadmap"
         element={<AppLayout><RoadmapPage /></AppLayout>}
+      />
+      <Route
+        path="/ai-roadmap"
+        element={<AppLayout><AiRoadmapPage /></AppLayout>}
       />
       <Route
         path="/leaderboard"

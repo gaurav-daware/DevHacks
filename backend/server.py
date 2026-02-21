@@ -14,6 +14,8 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 # from emergentintegrations.llm.chat import LlmChat, UserMessage
 import os
+import json
+import google.generativeai as genai
 import logging
 import uuid
 import random
@@ -1606,6 +1608,75 @@ async def get_similar_problems(problem_id: str, limit: int = 5, current_user=Dep
             p["is_solved"] = p["id"] in solved_set
     
     return similar[:limit]
+
+# ───────────────────────────────────────────────
+# AI ROADMAP GENERATOR
+# ───────────────────────────────────────────────
+
+class RoadmapRequest(BaseModel):
+    preparation_time: str
+    current_level: str = "Beginner"
+
+@api_router.post("/roadmap/generate")
+async def generate_dsa_roadmap(req: RoadmapRequest):
+    """Generates a structured DSA interview roadmap using AI"""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="Gemini API Key missing")
+        
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        prompt = f"""
+Generate a structured DSA interview roadmap.
+
+Time Available: {req.preparation_time}
+Current Level: {req.current_level}
+
+Return ONLY valid JSON in this exact format, with no markdown code block markers or extra text. Start directly with the opening curly brace.
+
+{{
+  "total_duration": "{req.preparation_time}",
+  "difficulty_level": "{req.current_level}",
+  "weekly_commitment": "X hours/week",
+  "phases": [
+    {{
+      "phase": 1,
+      "title": "Phase Name",
+      "duration": "X weeks",
+      "focus_topics": ["Topic1", "Topic2"],
+      "practice_goal": "Number of problems",
+      "platforms": ["LeetCode", "CodeStudio"],
+      "milestones": ["Milestone1"]
+    }}
+  ],
+  "revision_strategy": ["Strategy1", "Strategy2"],
+  "mock_interview_plan": "Description"
+}}
+
+Rules:
+- 4 to 6 phases
+- Must be realistic for {req.preparation_time}
+- Structured weekly progression
+- Practical milestones
+- Return raw JSON only, nothing else
+"""
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        
+        # Clean up any potential markdown formatting
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+            
+        return json.loads(text.strip())
+        
+    except Exception as e:
+        logger.error(f"Roadmap generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ───────────────────────────────────────────────
 # INTERVIEW KITS ROUTES

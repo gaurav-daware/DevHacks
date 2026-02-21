@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Code2, Trophy, LayoutDashboard, User, LogOut,
-  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords
+  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords, Sparkles
 } from "lucide-react";
 
 export default function Navbar() {
@@ -26,7 +26,8 @@ export default function Navbar() {
     { to: "/problems", label: "Problems", icon: Code2 },
     { to: "/contests", label: "Contests", icon: Trophy },
     { to: "/daily", label: "Daily", icon: Calendar },
-    { to: "/roadmap", label: "Roadmap", icon: Route },
+    // { to: "/roadmap", label: "Roadmap", icon: Route },
+    { to: "/ai-roadmap", label: "AI Roadmap", icon: Sparkles },
     { to: "/leaderboard", label: "Rankings", icon: Medal },
     { to: "/interview-kits", label: "Interview", icon: Briefcase },
     { to: "/battle", label: "Battle", icon: Swords },
@@ -53,11 +54,10 @@ export default function Navbar() {
             <Link
               key={to}
               to={to}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors ${
-                isActive(to)
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors ${isActive(to)
                   ? "text-primary bg-primary/10"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              }`}
+                }`}
               data-testid={`nav-${label.toLowerCase()}`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -67,11 +67,10 @@ export default function Navbar() {
           {user?.role === "admin" && (
             <Link
               to="/admin"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors ${
-                isActive("/admin")
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors ${isActive("/admin")
                   ? "text-yellow-400 bg-yellow-400/10"
                   : "text-muted-foreground hover:text-yellow-400 hover:bg-yellow-400/5"
-              }`}
+                }`}
               data-testid="nav-admin"
             >
               <Shield className="w-3.5 h-3.5" />
@@ -175,9 +174,8 @@ export default function Navbar() {
               key={to}
               to={to}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-sm text-sm ${
-                isActive(to) ? "text-primary bg-primary/10" : "text-muted-foreground"
-              }`}
+              className={`flex items-center gap-2 px-3 py-2 rounded-sm text-sm ${isActive(to) ? "text-primary bg-primary/10" : "text-muted-foreground"
+                }`}
             >
               <Icon className="w-4 h-4" />
               {label}
