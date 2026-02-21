@@ -1,0 +1,38 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <algorithm>
+#include <json/json.h> // If available, but we'll manually parse simple arrays for now
+
+using namespace std;
+
+{{USER_CODE}}
+
+int main() {
+    string line;
+    while (getline(cin, line)) {
+        if (line.empty()) continue;
+        
+        // Manual Simple Parser for [1,2,3] or 1 2 3
+        vector<int> nums;
+        if (line[0] == '[') line = line.substr(1, line.length() - 2);
+        replace(line.begin(), line.end(), ',', ' ');
+        stringstream ss(line);
+        int val;
+        while (ss >> val) nums.push_back(val);
+        
+        int target;
+        if (!(cin >> target)) break;
+        getline(cin, line); // consume newline
+
+        Solution sol;
+        vector<int> result = sol.{{METHOD_NAME}}(nums, target);
+        
+        for (int i = 0; i < result.size(); i++) {
+            cout << result[i] << (i == result.size() - 1 ? "" : " ");
+        }
+        cout << endl;
+    }
+    return 0;
+}

@@ -1,0 +1,28 @@
+import sys
+import json
+
+{{USER_CODE}}
+
+def solve():
+    input_data = sys.stdin.read().splitlines()
+    if not input_data:
+        return
+        
+    it = iter(input_data)
+    sol = Solution()
+    while True:
+        try:
+            {{CALL_LOGIC}}
+            # Result formatting
+            if isinstance(result, (list, dict)):
+                print(json.dumps(result))
+            else:
+                print(result)
+        except StopIteration:
+            break
+        except Exception as e:
+            print(f"Runtime Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+if __name__ == "__main__":
+    solve()

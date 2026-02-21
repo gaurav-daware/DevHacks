@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 from additional_problems import ADDITIONAL_PROBLEMS
 from judge import CodeRunner
+import json
+from pair_manager import pair_manager
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -96,6 +98,34 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+
+# ───────────────────────────────────────────────
+# PAIR PROGRAMMING WEBSOCKET (Production Architecture)
+# ───────────────────────────────────────────────
+@app.websocket("/ws/pair/{room_id}")
+async def websocket_pair_endpoint(websocket: WebSocket, room_id: str, username: str = "Anonymous"):
+    sid = await pair_manager.connect(websocket, room_id, username)
+    if not sid:
+        return
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
+            await pair_manager.handle_message(room_id, sid, message)
+    except WebSocketDisconnect:
+        pair_manager.disconnect(room_id, sid)
+        await pair_manager.broadcast(room_id, {
+            "type": "presence_update",
+            "data": {
+                "action": "leave",
+                "sid": sid,
+                "participants": pair_manager._get_participants(room_id)
+            }
+        })
+    except Exception as e:
+        logger.error(f"WebSocket error in room {room_id}: {e}")
+        pair_manager.disconnect(room_id, sid)
 
 # ───────────────────────────────────────────────
 # PYDANTIC MODELS

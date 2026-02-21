@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Code2, Trophy, LayoutDashboard, User, LogOut,
-  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords
+  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords, Users
 } from "lucide-react";
 
 export default function Navbar() {
@@ -25,6 +25,7 @@ export default function Navbar() {
   const navLinks = [
     { to: "/problems", label: "Problems", icon: Code2 },
     { to: "/contests", label: "Contests", icon: Trophy },
+    { to: "/pair", label: "Pair", icon: Users },
     { to: "/daily", label: "Daily", icon: Calendar },
     { to: "/roadmap", label: "Roadmap", icon: Route },
     { to: "/leaderboard", label: "Rankings", icon: Medal },
