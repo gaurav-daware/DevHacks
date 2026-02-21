@@ -14,11 +14,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Play, Lightbulb, RotateCcw, Clock, CheckCircle2, XCircle,
-  AlertTriangle, ChevronDown, ChevronUp, History, Loader2, Brain, Eye
+  AlertTriangle, ChevronDown, ChevronUp, History, Loader2, Brain, Eye, MessageSquare, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import CodePlayback from "@/components/CodePlayback";
+import DiscussionsTab from "@/components/DiscussionsTab";
+import SimilarProblems from "@/components/SimilarProblems";
+import CodeReview from "@/components/CodeReview";
 
 const DIFFICULTY_COLORS = {
   easy: "text-green-400 border-green-400/30 bg-green-400/5",
