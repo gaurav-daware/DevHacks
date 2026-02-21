@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 from additional_problems import ADDITIONAL_PROBLEMS
 from judge import CodeRunner
+from coding_assistant import create_coding_assistant
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -167,6 +168,15 @@ class HintRequest(BaseModel):
     problem_id: str
     code: str = ""
     hint_level: int = 1
+
+class AskAIRequest(BaseModel):
+    code: str = ""
+    language: str = "python"
+    error: str = ""
+    question: str
+
+# Per-user per-problem AI assistant sessions (in-memory)
+assistant_sessions: dict = {}
 
 # ───────────────────────────────────────────────
 # AUTH UTILITIES
@@ -938,8 +948,51 @@ async def ws_contest(websocket: WebSocket, contest_id: str):
         manager.disconnect(websocket, contest_id)
 
 # ───────────────────────────────────────────────
+# AI CODING ASSISTANT ROUTES
+# ───────────────────────────────────────────────
+
+@api_router.post("/problems/{problem_id}/ask_ai")
+async def ask_ai_assistant(
+    problem_id: str,
+    req: AskAIRequest,
+    current_user=Depends(get_current_user)
+):
+    """Conversational AI mentor to help debug code using LangChain + Gemini."""
+    problem = await db.problems.find_one({"id": problem_id}, {"_id": 0, "test_cases": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+
+    session_key = f"{current_user['id']}_{problem_id}"
+
+    if session_key not in assistant_sessions:
+        problem_context = (
+            f"Title: {problem['title']}\n"
+            f"Description: {problem['description'][:3000]}\n"
+            f"Tags: {', '.join(problem.get('tags', []))}\n"
+            f"Current Code:\n{req.code[:2000]}\n"
+            f"Error:\n{req.error[:500]}"
+        )
+        try:
+            assistant_sessions[session_key] = create_coding_assistant(
+                problem_context=problem_context,
+                language=req.language
+            )
+        except Exception as e:
+            logger.error(f"Failed to create assistant session: {e}")
+            raise HTTPException(status_code=500, detail="AI service unavailable")
+
+    chain = assistant_sessions[session_key]
+    try:
+        response = await asyncio.to_thread(chain.predict, input=req.question)
+        return {"response": response}
+    except Exception as e:
+        logger.error(f"AI assistant prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ───────────────────────────────────────────────
 # ADMIN ROUTES
 # ───────────────────────────────────────────────
+
 
 @api_router.get("/admin/stats")
 async def admin_stats(admin=Depends(get_admin)):

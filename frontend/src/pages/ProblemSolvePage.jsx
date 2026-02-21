@@ -90,6 +90,10 @@ export default function ProblemSolvePage() {
   const [playbackOpen, setPlaybackOpen] = useState(false);
   const [showCodeReview, setShowCodeReview] = useState(false);
   const [selectedSubForReview, setSelectedSubForReview] = useState(null);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Keystroke recording
   const keystrokesRef = useRef([]);
@@ -194,6 +198,27 @@ export default function ProblemSolvePage() {
     }
   };
 
+  const handleAskAI = async () => {
+    if (!aiInput.trim() || aiLoading) return;
+    const userMsg = aiInput.trim();
+    setAiInput("");
+    setAiMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setAiLoading(true);
+    try {
+      const res = await api.post(`/problems/${problemId}/ask_ai`, {
+        code,
+        language,
+        error: result?.verdict && result.verdict !== "Accepted" ? result.verdict : "",
+        question: userMsg
+      });
+      setAiMessages(prev => [...prev, { role: "ai", content: res.data.response }]);
+    } catch {
+      setAiMessages(prev => [...prev, { role: "ai", content: "Sorry, I couldn't connect to the AI. Please try again." }]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const loadPlayback = async (subId) => {
     try {
       const res = await api.get(`/submissions/${subId}/playback`);
@@ -247,6 +272,14 @@ export default function ProblemSolvePage() {
               <SelectItem value="javascript">JavaScript (Simulated)</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            onClick={() => setAiChatOpen(true)}
+            variant="outline"
+            className="h-8 px-3 gap-1.5 border-purple-500/40 text-purple-400 hover:bg-purple-500/10 hover:border-purple-400 hover:text-purple-300 transition-colors"
+            data-testid="ask-ai-btn"
+          >
+            <Sparkles className="w-3.5 h-3.5" /> Ask AI
+          </Button>
           <Button
             onClick={handleSubmit}
             disabled={submitting}
@@ -558,6 +591,75 @@ export default function ProblemSolvePage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* AI Coding Assistant Dialog */}
+      <Dialog open={aiChatOpen} onOpenChange={setAiChatOpen}>
+        <DialogContent className="bg-[#121215] border-[#27272a] max-w-2xl max-h-[80vh] flex flex-col" data-testid="ai-chat-dialog">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="font-heading flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              AI Coding Assistant
+              <span className="text-xs font-normal text-muted-foreground ml-1">Ask for hints, debug help, or discuss your approach</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Chat messages */}
+          <div className="flex-1 overflow-y-auto space-y-3 py-2 min-h-[250px] max-h-[400px] pr-1">
+            {aiMessages.length === 0 && (
+              <div className="text-center text-muted-foreground text-sm mt-8">
+                <Sparkles className="w-8 h-8 mx-auto mb-3 text-purple-500/50" />
+                <p className="font-medium">Ask me anything about this problem!</p>
+                <p className="text-xs mt-1 text-muted-foreground/70">I can help you debug, suggest approaches, or explain edge cases.</p>
+              </div>
+            )}
+            {aiMessages.map((msg, i) => (
+              <div key={i} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${msg.role === "user" ? "bg-primary/20 text-primary" : "bg-purple-500/20 text-purple-400"
+                  }`}>
+                  {msg.role === "user" ? "U" : "AI"}
+                </div>
+                <div className={`flex-1 text-sm rounded-lg p-3 max-w-[85%] ${msg.role === "user"
+                    ? "bg-primary/10 border border-primary/20 text-foreground ml-auto"
+                    : "bg-[#0a0a0b] border border-[#27272a] text-foreground"
+                  }`}>
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {aiLoading && (
+              <div className="flex gap-3">
+                <div className="w-7 h-7 rounded-full flex-shrink-0 bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs font-bold">AI</div>
+                <div className="bg-[#0a0a0b] border border-[#27272a] rounded-lg p-3 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Thinking...</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Input */}
+          <div className="flex gap-2 mt-2 pt-3 border-t border-[#27272a] shrink-0">
+            <input
+              className="flex-1 bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+              placeholder="Ask a question, e.g. 'Why is my approach O(n²)?'"
+              value={aiInput}
+              onChange={e => setAiInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleAskAI()}
+              disabled={aiLoading}
+            />
+            <Button
+              onClick={handleAskAI}
+              disabled={aiLoading || !aiInput.trim()}
+              className="bg-purple-600 hover:bg-purple-500 text-white h-9 px-4 shrink-0"
+            >
+              {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
