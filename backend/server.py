@@ -1270,7 +1270,7 @@ async def get_daily_challenge(current_user=Depends(get_optional_user)):
     # Check if we have a daily challenge set for today
     daily = await db.daily_challenges.find_one({"date": today}, {"_id": 0})
     
-    if not daily:
+    if not daily or not daily.get("problem_id"):
         # Auto-select a random problem as daily challenge
         problems = await db.problems.find({}, {"_id": 0}).to_list(100)
         if not problems:
@@ -1278,12 +1278,12 @@ async def get_daily_challenge(current_user=Depends(get_optional_user)):
         
         selected = random.choice(problems)
         daily = {
-            "id": str(uuid.uuid4()),
+            "id": daily.get("id") if daily else str(uuid.uuid4()),
             "date": today,
             "problem_id": selected["id"],
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": daily.get("created_at") if daily else datetime.now(timezone.utc).isoformat()
         }
-        await db.daily_challenges.insert_one(daily)
+        await db.daily_challenges.update_one({"date": today}, {"$set": daily}, upsert=True)
     
     # Fetch the problem
     problem = await db.problems.find_one({"id": daily["problem_id"]}, {"_id": 0, "test_cases": 0})
