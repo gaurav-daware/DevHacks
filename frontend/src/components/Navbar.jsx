@@ -29,7 +29,7 @@ export default function Navbar() {
     // { to: "/roadmap", label: "Roadmap", icon: Route },
     { to: "/ai-roadmap", label: "AI Roadmap", icon: Sparkles },
     { to: "/leaderboard", label: "Rankings", icon: Medal },
-    { to: "/interview-kits", label: "Interview", icon: Briefcase },
+   // { to: "/interview-kits", label: "Interview", icon: Briefcase },
     { to: "/battle", label: "Battle", icon: Swords },
     { to: "/pair", label: "Pair", icon: Users2 },
   ];
