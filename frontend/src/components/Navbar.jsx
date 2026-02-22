@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Code2, Trophy, LayoutDashboard, User, LogOut,
-  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords, Sparkles
+  Menu, X, Shield, Zap, Calendar, Route, Medal, Briefcase, Swords, Sparkles, Users2
 } from "lucide-react";
 
 export default function Navbar() {
@@ -31,6 +31,7 @@ export default function Navbar() {
     { to: "/leaderboard", label: "Rankings", icon: Medal },
     { to: "/interview-kits", label: "Interview", icon: Briefcase },
     { to: "/battle", label: "Battle", icon: Swords },
+    { to: "/pair", label: "Pair", icon: Users2 },
   ];
 
   const isActive = (path) => location.pathname.startsWith(path);
@@ -55,8 +56,8 @@ export default function Navbar() {
               key={to}
               to={to}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors ${isActive(to)
-                  ? "text-primary bg-primary/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                ? "text-primary bg-primary/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                 }`}
               data-testid={`nav-${label.toLowerCase()}`}
             >
@@ -68,8 +69,8 @@ export default function Navbar() {
             <Link
               to="/admin"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors ${isActive("/admin")
-                  ? "text-yellow-400 bg-yellow-400/10"
-                  : "text-muted-foreground hover:text-yellow-400 hover:bg-yellow-400/5"
+                ? "text-yellow-400 bg-yellow-400/10"
+                : "text-muted-foreground hover:text-yellow-400 hover:bg-yellow-400/5"
                 }`}
               data-testid="nav-admin"
             >

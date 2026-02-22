@@ -28,6 +28,7 @@ from pathlib import Path
 from additional_problems import ADDITIONAL_PROBLEMS
 from judge import CodeRunner
 from coding_assistant import create_coding_assistant
+from pair_manager import PairRoomManager
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -2160,6 +2161,103 @@ async def get_activity_heatmap(current_user=Depends(get_current_user)):
         "total_submissions": sum(d["total"] for d in activity.values()),
         "total_accepted": sum(d["accepted"] for d in activity.values())
     }
+
+# ───────────────────────────────────────────────
+# PAIR PROGRAMMING
+# ───────────────────────────────────────────────
+pair_mgr = PairRoomManager()
+
+@api_router.post("/pair/create")
+async def create_pair_room(current_user: dict = Depends(get_current_user)):
+    room = pair_mgr.create_room(current_user["id"], current_user["username"])
+    return room
+
+class JoinRoomRequest(BaseModel):
+    room_id: str
+
+@api_router.post("/pair/join")
+async def join_pair_room(req: JoinRoomRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        room = pair_mgr.join_room(req.room_id, current_user["id"], current_user["username"])
+        # Broadcast user_joined to everyone already in the room
+        await pair_mgr.broadcast(room["room_id"], {
+            "type": "user_joined",
+            "username": current_user["username"],
+            "participants": room["participants"]
+        })
+        return room
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get("/pair/room/{room_id}")
+async def get_pair_room(room_id: str, current_user: dict = Depends(get_current_user)):
+    room = pair_mgr.get_room(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+@app.websocket("/api/ws/pair/{room_id}")
+async def pair_ws(ws: WebSocket, room_id: str):
+    await ws.accept()
+    pair_mgr.add_ws(room_id, ws)
+    try:
+        while True:
+            raw = await ws.receive_text()
+            data = json.loads(raw)
+            msg_type = data.get("type")
+
+            if msg_type == "code_update":
+                pair_mgr.update_code(room_id, data.get("code", ""), data.get("language"))
+                await pair_mgr.broadcast(room_id, {
+                    "type": "code_update",
+                    "code": data.get("code", ""),
+                    "language": data.get("language"),
+                    "sender": data.get("sender", "")
+                }, exclude=ws)
+
+            elif msg_type == "chat_message":
+                msg = pair_mgr.add_message(
+                    room_id,
+                    data.get("user_id", ""),
+                    data.get("username", ""),
+                    data.get("text", "")
+                )
+                await pair_mgr.broadcast(room_id, {
+                    "type": "chat_message",
+                    "message": msg
+                })
+
+            elif msg_type == "problem_select":
+                problem_id = data.get("problem_id")
+                if problem_id:
+                    prob = await db.problems.find_one({"id": problem_id})
+                    if prob:
+                        prob.pop("_id", None)
+                        pair_mgr.set_problem(room_id, problem_id, prob)
+                        await pair_mgr.broadcast(room_id, {
+                            "type": "problem_selected",
+                            "problem": prob
+                        })
+
+            elif msg_type == "language_change":
+                pair_mgr.update_code(room_id, data.get("code", ""), data.get("language", "python"))
+                await pair_mgr.broadcast(room_id, {
+                    "type": "language_change",
+                    "language": data.get("language", "python"),
+                    "sender": data.get("sender", "")
+                }, exclude=ws)
+
+    except WebSocketDisconnect:
+        pair_mgr.remove_ws(room_id, ws)
+        # Notify others
+        room = pair_mgr.get_room(room_id)
+        if room:
+            await pair_mgr.broadcast(room_id, {
+                "type": "user_left",
+                "participants": room["participants"]
+            })
+    except Exception:
+        pair_mgr.remove_ws(room_id, ws)
 
 # ───────────────────────────────────────────────
 # APP LIFECYCLE

@@ -16,6 +16,7 @@ import AiRoadmapPage from "@/pages/AiRoadmapPage";
 import GlobalLeaderboardPage from "@/pages/GlobalLeaderboardPage";
 import InterviewKitsPage from "@/pages/InterviewKitsPage";
 import BattleModePage from "@/pages/BattleModePage";
+import PairProgrammingPage from "@/pages/PairProgrammingPage";
 import "@/App.css";
 
 // Protected route wrapper
@@ -125,6 +126,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <BattleModePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/pair"
+        element={
+          <ProtectedRoute>
+            <AppLayout><PairProgrammingPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/pair/:roomId"
+        element={
+          <ProtectedRoute>
+            <PairProgrammingPage />
           </ProtectedRoute>
         }
       />
