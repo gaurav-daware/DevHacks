@@ -22,6 +22,7 @@ import CodePlayback from "@/components/CodePlayback";
 import DiscussionsTab from "@/components/DiscussionsTab";
 import SimilarProblems from "@/components/SimilarProblems";
 import CodeReview from "@/components/CodeReview";
+import TestCasePanel from "@/components/TestCasePanel";
 
 const DIFFICULTY_COLORS = {
   easy: "text-green-400 border-green-400/30 bg-green-400/5",
@@ -95,6 +96,12 @@ export default function ProblemSolvePage() {
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
+  // Run Code state
+  const [testCases, setTestCases] = useState([]);
+  const [runResults, setRunResults] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [testPanelCollapsed, setTestPanelCollapsed] = useState(false);
+
   // Keystroke recording
   const keystrokesRef = useRef([]);
   const startTimeRef = useRef(Date.now());
@@ -108,6 +115,10 @@ export default function ProblemSolvePage() {
     try {
       const res = await api.get(`/problems/${problemId}`);
       setProblem(res.data);
+      // Initialize example test cases for Run feature
+      if (res.data.example_test_cases?.length) {
+        setTestCases(res.data.example_test_cases.map(tc => ({ ...tc })));
+      }
     } catch {
       toast.error("Problem not found");
       navigate("/problems");
@@ -143,6 +154,49 @@ export default function ProblemSolvePage() {
     if (keystrokesRef.current.length > 500) {
       keystrokesRef.current = keystrokesRef.current.slice(-500);
     }
+  };
+
+  const handleRunCode = async () => {
+    if (!code.trim()) {
+      toast.error("Write some code first!");
+      return;
+    }
+    if (!testCases.length) {
+      toast.error("No test cases available");
+      return;
+    }
+    setRunning(true);
+    setRunResults([]);
+    setTestPanelCollapsed(false);
+    try {
+      const res = await api.post("/run", {
+        language,
+        code,
+        problem_id: problemId,
+        test_cases: testCases.map(tc => ({ input: tc.input, output: tc.output }))
+      });
+      setRunResults(res.data.test_results || []);
+      const allPassed = res.data.test_results?.every(r => r.passed);
+      if (allPassed) {
+        toast.success("All test cases passed!");
+      } else {
+        toast.error("Some test cases failed");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Run failed");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleTestCaseInputChange = (idx, newInput) => {
+    setTestCases(prev => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], input: newInput };
+      return updated;
+    });
+    // Clear previous results when input changes
+    setRunResults([]);
   };
 
   const handleSubmit = async () => {
@@ -281,15 +335,28 @@ export default function ProblemSolvePage() {
             <Sparkles className="w-3.5 h-3.5" /> Ask AI
           </Button>
           <Button
+            onClick={handleRunCode}
+            disabled={running}
+            variant="outline"
+            className="h-8 px-4 gap-2 border-primary/40 text-primary hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors"
+            data-testid="run-btn"
+          >
+            {running ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running...</>
+            ) : (
+              <><Play className="w-3.5 h-3.5" /> Run Code</>
+            )}
+          </Button>
+          <Button
             onClick={handleSubmit}
             disabled={submitting}
             className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-4 gap-2"
             data-testid="submit-btn"
           >
             {submitting ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running...</>
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Submitting...</>
             ) : (
-              <><Play className="w-3.5 h-3.5" /> Submit</>
+              <>Submit</>
             )}
           </Button>
         </div>
@@ -517,6 +584,18 @@ export default function ProblemSolvePage() {
             />
           </div>
 
+          {/* Test Case Panel */}
+          {testCases.length > 0 && (
+            <TestCasePanel
+              testCases={testCases}
+              runResults={runResults}
+              running={running}
+              collapsed={testPanelCollapsed}
+              onToggle={() => setTestPanelCollapsed(prev => !prev)}
+              onTestCaseInputChange={handleTestCaseInputChange}
+            />
+          )}
+
           {/* Result panel */}
           {result && (
             <div className="border-t border-[#27272a] p-4 max-h-48 overflow-y-auto bg-[#09090b]" data-testid="result-panel">
@@ -619,8 +698,8 @@ export default function ProblemSolvePage() {
                   {msg.role === "user" ? "U" : "AI"}
                 </div>
                 <div className={`flex-1 text-sm rounded-lg p-3 max-w-[85%] ${msg.role === "user"
-                    ? "bg-primary/10 border border-primary/20 text-foreground ml-auto"
-                    : "bg-[#0a0a0b] border border-[#27272a] text-foreground"
+                  ? "bg-primary/10 border border-primary/20 text-foreground ml-auto"
+                  : "bg-[#0a0a0b] border border-[#27272a] text-foreground"
                   }`}>
                   <div className="prose prose-invert prose-sm max-w-none">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>

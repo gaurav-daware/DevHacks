@@ -165,6 +165,12 @@ class SubmitCodeRequest(BaseModel):
     contest_id: Optional[str] = None
     keystrokes: Optional[List[Keystroke]] = []
 
+class RunCodeRequest(BaseModel):
+    language: str
+    code: str
+    problem_id: str
+    test_cases: List[TestCase]
+
 class HintRequest(BaseModel):
     problem_id: str
     code: str = ""
@@ -442,9 +448,12 @@ async def get_problem(problem_id: str, current_user=Depends(get_optional_user)):
         raise HTTPException(status_code=404, detail="Problem not found")
 
     result = {**problem}
-    # Only expose test cases for admins; regular users see sample
+    all_tcs = problem.get("test_cases", [])
+    # Always expose first 3 test cases as example_test_cases for Run feature
+    result["example_test_cases"] = all_tcs[:3]
+    # Only expose full test cases for admins; hide from regular users
     if not current_user or current_user.get("role") != "admin":
-        result["test_cases"] = problem.get("test_cases", [])[:1]
+        result.pop("test_cases", None)
 
     if current_user:
         result["is_solved"] = problem_id in current_user.get("solved_problems", [])
@@ -855,6 +864,31 @@ async def submit_code(body: SubmitCodeRequest, current_user=Depends(get_current_
             )
 
     return sub_doc
+
+@api_router.post("/run")
+async def run_code(body: RunCodeRequest):
+    """Run code against user-visible example test cases only. No submission record saved."""
+    problem = await db.problems.find_one({"id": body.problem_id}, {"_id": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+
+    time_limit = problem.get("time_limit", 5)
+    results = []
+    for tc in body.test_cases[:5]:  # Cap at 5 test cases
+        r = await execute_single(
+            body.code, body.language,
+            tc.input, tc.output,
+            time_limit
+        )
+        results.append(r)
+
+    passed_all = all(r.get("passed") for r in results)
+    max_time = max((r.get("time", 0) for r in results), default=0.0)
+    return {
+        "verdict": "Accepted" if passed_all else "Wrong Answer",
+        "test_results": results,
+        "execution_time": round(max_time, 3)
+    }
 
 @api_router.get("/submissions/problem/{problem_id}")
 async def get_problem_submissions(problem_id: str, current_user=Depends(get_current_user)):
@@ -1903,7 +1937,7 @@ class BattleJoin(BaseModel):
 
 @api_router.post("/battles/create")
 async def create_battle(body: BattleCreate, current_user=Depends(get_current_user)):
-    """Create a new 1v1 battle room"""
+    """Create a new 1v1 battle room with 10-minute timer"""
     battle_id = str(uuid.uuid4())
     join_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     
@@ -1923,12 +1957,19 @@ async def create_battle(body: BattleCreate, current_user=Depends(get_current_use
         "join_code": join_code,
         "problem_id": selected["id"],
         "difficulty": body.difficulty,
+        "duration": 600,  # 10 minutes in seconds
         "player1_id": current_user["id"],
         "player1_username": current_user["username"],
         "player2_id": None,
         "player2_username": None,
         "player1_solved": False,
         "player2_solved": False,
+        "player1_score": 0,
+        "player2_score": 0,
+        "player1_time": None,
+        "player2_time": None,
+        "player1_attempts": 0,
+        "player2_attempts": 0,
         "winner_id": None,
         "status": "waiting",  # waiting, active, finished
         "started_at": None,
@@ -1973,20 +2014,76 @@ async def join_battle(body: BattleJoin, current_user=Depends(get_current_user)):
 
 @api_router.get("/battles/{battle_id}")
 async def get_battle(battle_id: str, current_user=Depends(get_current_user)):
-    """Get battle details"""
+    """Get battle details with full problem information"""
     battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
     if not battle:
         raise HTTPException(status_code=404, detail="Battle not found")
     
-    # Get problem details
-    problem = await db.problems.find_one({"id": battle["problem_id"]}, {"_id": 0, "test_cases": 0})
-    battle["problem"] = problem
+    # Get full problem details (excluding test_cases for security)
+    problem = await db.problems.find_one(
+        {"id": battle["problem_id"]},
+        {"_id": 0, "test_cases": 0}
+    )
+    if problem:
+        battle["problem"] = problem
+    else:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    # Include first 3 test cases as sample_test_cases (visible to users)
+    full_problem = await db.problems.find_one({"id": battle["problem_id"]}, {"_id": 0, "test_cases": 1})
+    all_test_cases = full_problem.get("test_cases", []) if full_problem else []
+    battle["sample_test_cases"] = all_test_cases[:3]
     
     return battle
 
+class RunCodeRequest(BaseModel):
+    code: str
+    language: str
+
+@api_router.post("/battles/{battle_id}/run")
+async def run_battle_code(battle_id: str, body: RunCodeRequest, current_user=Depends(get_current_user)):
+    """Run code against sample test cases only (does NOT count as a submission)"""
+    battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+    
+    if current_user["id"] not in [battle.get("player1_id"), battle.get("player2_id")]:
+        raise HTTPException(status_code=403, detail="You are not a participant in this battle")
+    
+    # Get the first 3 test cases only
+    problem = await db.problems.find_one({"id": battle["problem_id"]}, {"_id": 0})
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    all_test_cases = problem.get("test_cases", [])
+    sample_cases = all_test_cases[:3]
+    
+    if not sample_cases:
+        return {"verdict": "No test cases", "test_results": [], "execution_time": 0.0}
+    
+    exec_result = await run_submission(body.code, body.language, sample_cases, problem.get("time_limit", 5))
+    
+    # Enrich results with input/expected for display
+    enriched_results = []
+    for i, tr in enumerate(exec_result.get("test_results", [])):
+        tc = sample_cases[i] if i < len(sample_cases) else {}
+        enriched_results.append({
+            **tr,
+            "input": tc.get("input", ""),
+            "expected_output": tc.get("output", ""),
+            "actual_output": tr.get("output", ""),
+        })
+    
+    return {
+        "verdict": exec_result["verdict"],
+        "test_results": enriched_results,
+        "execution_time": exec_result["execution_time"]
+    }
+
+
 @api_router.post("/battles/{battle_id}/submit")
 async def submit_battle_solution(battle_id: str, body: SubmitCodeRequest, current_user=Depends(get_current_user)):
-    """Submit solution for a battle"""
+    """Submit solution for a battle - first to solve wins"""
     battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
     if not battle:
         raise HTTPException(status_code=404, detail="Battle not found")
@@ -2001,22 +2098,47 @@ async def submit_battle_solution(battle_id: str, body: SubmitCodeRequest, curren
     problem = await db.problems.find_one({"id": battle["problem_id"]}, {"_id": 0})
     test_cases = problem.get("test_cases", [])
     
+    submission_time = datetime.now(timezone.utc)
     exec_result = await run_submission(body.code, body.language, test_cases, problem.get("time_limit", 5))
     
     is_player1 = current_user["id"] == battle["player1_id"]
-    update_field = "player1_solved" if is_player1 else "player2_solved"
+    
+    # Calculate time taken from battle start
+    started_at_str = battle.get("started_at", "")
+    if started_at_str:
+        start_time = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+        time_taken = (submission_time - start_time).total_seconds()
+    else:
+        time_taken = 0
+    
+    # Calculate score: correctness (70%) + speed (30%)
+    correctness_score = 100 if exec_result["verdict"] == "Accepted" else 0
+    max_time = 1800
+    speed_score = max(0, 100 * (1 - min(time_taken, max_time) / max_time))
+    total_score = (correctness_score * 0.7) + (speed_score * 0.3)
+    
+    # Update battle with submission info
+    update_field_solved = "player1_solved" if is_player1 else "player2_solved"
+    update_field_time = "player1_time" if is_player1 else "player2_time"
+    update_field_score = "player1_score" if is_player1 else "player2_score"
+    update_field_attempts = "player1_attempts" if is_player1 else "player2_attempts"
+    
+    current_attempts = battle.get(update_field_attempts, 0)
+    
+    update_data = {
+        update_field_attempts: current_attempts + 1,
+        update_field_time: time_taken,
+        update_field_score: total_score
+    }
     
     if exec_result["verdict"] == "Accepted":
-        update_data = {update_field: True}
-        
-        # Check if this player won
-        other_solved = battle["player2_solved"] if is_player1 else battle["player1_solved"]
-        if not other_solved:
-            update_data["winner_id"] = current_user["id"]
-            update_data["status"] = "finished"
-            update_data["finished_at"] = datetime.now(timezone.utc).isoformat()
-        
-        await db.battles.update_one({"id": battle_id}, {"$set": update_data})
+        update_data[update_field_solved] = True
+        # First to solve wins immediately
+        update_data["winner_id"] = current_user["id"]
+        update_data["status"] = "finished"
+        update_data["finished_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.battles.update_one({"id": battle_id}, {"$set": update_data})
     
     # Save submission
     sub_id = str(uuid.uuid4())
@@ -2031,24 +2153,30 @@ async def submit_battle_solution(battle_id: str, body: SubmitCodeRequest, curren
         "verdict": exec_result["verdict"],
         "execution_time": exec_result["execution_time"],
         "test_results": exec_result["test_results"],
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "time_taken": time_taken,
+        "score": total_score,
+        "created_at": submission_time.isoformat()
     }
     await db.submissions.insert_one(sub_doc)
     sub_doc.pop("_id", None)
     
+    # Get updated battle
+    updated_battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
+    
     # Broadcast update via WebSocket
     await manager.broadcast(f"battle_{battle_id}", {
         "type": "battle_update",
-        "player_id": current_user["id"],
-        "verdict": exec_result["verdict"],
-        "solved": exec_result["verdict"] == "Accepted"
+        "data": {
+            "battle": updated_battle,
+            "submission": sub_doc
+        }
     })
-    
-    updated_battle = await db.battles.find_one({"id": battle_id}, {"_id": 0})
     
     return {
         "submission": sub_doc,
-        "battle": updated_battle
+        "battle": updated_battle,
+        "score": total_score,
+        "time_taken": time_taken
     }
 
 @api_router.get("/battles/active/list")
