@@ -2247,6 +2247,14 @@ async def pair_ws(ws: WebSocket, room_id: str):
                     "sender": data.get("sender", "")
                 }, exclude=ws)
 
+            elif msg_type == "submission_result":
+                await pair_mgr.broadcast(room_id, {
+                    "type": "submission_result",
+                    "sender": data.get("sender", ""),
+                    "username": data.get("username", ""),
+                    "result": data.get("result", {})
+                }, exclude=ws)
+
     except WebSocketDisconnect:
         pair_mgr.remove_ws(room_id, ws)
         # Notify others

@@ -104,6 +104,16 @@ export default function PairProgrammingPage() {
           setRoom(prev => prev ? { ...prev, problem: data.problem, problem_id: data.problem.id } : prev);
           toast.success(`Problem selected: ${data.problem.title}`);
           break;
+        case "submission_result":
+          if (data.sender !== user?.id) {
+            setResult(data.result);
+            if (data.result.verdict === "Accepted") {
+              toast.success(`🎉 ${data.username} submitted — Accepted!`);
+            } else {
+              toast.error(`${data.username} submitted — ${data.result.verdict}`);
+            }
+          }
+          break;
         default:
           break;
       }
@@ -250,6 +260,15 @@ export default function PairProgrammingPage() {
         toast.success("🎉 Accepted! Great teamwork!");
       } else {
         toast.error(`Verdict: ${res.data.verdict}`);
+      }
+      // Broadcast result to partner via WebSocket
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: "submission_result",
+          sender: user?.id,
+          username: user?.username,
+          result: res.data
+        }));
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || "Submission failed");
@@ -401,11 +420,10 @@ export default function PairProgrammingPage() {
             {room?.participants?.map((p) => (
               <div
                 key={p.user_id}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm ${
-                  p.user_id === user?.id
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm ${p.user_id === user?.id
                     ? "bg-primary/15 border border-primary/30 text-primary"
                     : "bg-zinc-800 border border-zinc-700 text-white"
-                }`}
+                  }`}
               >
                 <div className={`w-2 h-2 rounded-full ${p.user_id === user?.id ? "bg-primary" : "bg-emerald-400"}`} />
                 <span className="font-medium">{p.username}</span>
@@ -424,8 +442,8 @@ export default function PairProgrammingPage() {
         <div className="flex items-center gap-3">
           <Badge className={
             room?.status === "active" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
-            room?.status === "waiting" ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
-            "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"
+              room?.status === "waiting" ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
+                "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"
           }>
             {room?.status?.toUpperCase()}
           </Badge>
@@ -453,8 +471,8 @@ export default function PairProgrammingPage() {
                 <h2 className="text-lg font-bold text-white truncate">{room.problem.title}</h2>
                 <Badge className={
                   room.problem.difficulty === "easy" ? "bg-emerald-500/20 text-emerald-400" :
-                  room.problem.difficulty === "medium" ? "bg-amber-500/20 text-amber-400" :
-                  "bg-red-500/20 text-red-400"
+                    room.problem.difficulty === "medium" ? "bg-amber-500/20 text-amber-400" :
+                      "bg-red-500/20 text-red-400"
                 }>
                   {room.problem.difficulty}
                 </Badge>
@@ -519,8 +537,8 @@ export default function PairProgrammingPage() {
                         <span className="text-sm text-white group-hover:text-primary transition-colors truncate">{p.title}</span>
                         <Badge className={
                           p.difficulty === "easy" ? "bg-emerald-500/20 text-emerald-400 text-xs" :
-                          p.difficulty === "medium" ? "bg-amber-500/20 text-amber-400 text-xs" :
-                          "bg-red-500/20 text-red-400 text-xs"
+                            p.difficulty === "medium" ? "bg-amber-500/20 text-amber-400 text-xs" :
+                              "bg-red-500/20 text-red-400 text-xs"
                         }>
                           {p.difficulty}
                         </Badge>
@@ -600,18 +618,16 @@ export default function PairProgrammingPage() {
 
           {/* Result Panel */}
           {result && (
-            <div className={`p-3 border-t border-zinc-800 ${
-              result.verdict === "Accepted" ? "bg-emerald-500/5" : "bg-red-500/5"
-            }`}>
+            <div className={`p-3 border-t border-zinc-800 ${result.verdict === "Accepted" ? "bg-emerald-500/5" : "bg-red-500/5"
+              }`}>
               <div className="flex items-center gap-2">
                 {result.verdict === "Accepted" ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 ) : (
                   <XCircle className="w-4 h-4 text-red-400" />
                 )}
-                <span className={`text-sm font-medium ${
-                  result.verdict === "Accepted" ? "text-emerald-400" : "text-red-400"
-                }`}>
+                <span className={`text-sm font-medium ${result.verdict === "Accepted" ? "text-emerald-400" : "text-red-400"
+                  }`}>
                   {result.verdict}
                 </span>
                 {result.execution_time && (
@@ -623,9 +639,8 @@ export default function PairProgrammingPage() {
               {result.test_results?.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {result.test_results.slice(0, 5).map((tc, i) => (
-                    <div key={i} className={`text-xs rounded px-2 py-1 ${
-                      tc.passed ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10"
-                    }`}>
+                    <div key={i} className={`text-xs rounded px-2 py-1 ${tc.passed ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10"
+                      }`}>
                       Test {i + 1}: {tc.verdict}
                     </div>
                   ))}
@@ -656,11 +671,10 @@ export default function PairProgrammingPage() {
               return (
                 <div key={msg.id} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
                   <span className="text-[10px] text-zinc-600 mb-0.5 px-1">{msg.username}</span>
-                  <div className={`max-w-[90%] px-2.5 py-1.5 rounded-lg text-sm ${
-                    isMe
+                  <div className={`max-w-[90%] px-2.5 py-1.5 rounded-lg text-sm ${isMe
                       ? "bg-primary/15 border border-primary/25 text-foreground"
                       : "bg-zinc-800 border border-zinc-700 text-foreground"
-                  }`}>
+                    }`}>
                     {msg.text}
                   </div>
                   <span className="text-[9px] text-zinc-700 mt-0.5 px-1">
